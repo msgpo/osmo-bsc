@@ -260,7 +260,7 @@ static int ho_gsm48_ho_compl(struct gsm_lchan *new_lchan)
 
 	net = new_lchan->ts->trx->bts->network;
 	LOGP(DHO, LOGL_INFO, "Subscriber %s HO from BTS %u->%u on ARFCN "
-	     "%u->%u\n", bsc_subscr_name(ho->old_lchan->conn->bsub),
+	     "%u->%u HANDOVER COMPLETE\n", bsc_subscr_name(ho->old_lchan->conn->bsub),
 	     ho->old_lchan->ts->trx->bts->nr, new_lchan->ts->trx->bts->nr,
 	     ho->old_lchan->ts->trx->arfcn, new_lchan->ts->trx->arfcn);
 
@@ -299,6 +299,9 @@ static int ho_gsm48_ho_fail(struct gsm_lchan *old_lchan)
 		return -ENODEV;
 	}
 
+	LOGP(DHO, LOGL_ERROR, "%s -> %s HANDOVER FAIL\n",
+	     gsm_lchan_name(old_lchan), gsm_lchan_name(ho->new_lchan));
+
 	rate_ctr_inc(&net->bsc_ctrs->ctr[BSC_CTR_HANDOVER_FAILED]);
 
 	new_lchan = ho->new_lchan;
@@ -325,7 +328,17 @@ static int ho_rsl_detect(struct gsm_lchan *new_lchan)
 		return -ENODEV;
 	}
 
+	LOGP(DHO, LOGL_DEBUG, "HANDOVER DETECT %s -> %s\n",
+	     gsm_lchan_name(ho->old_lchan), gsm_lchan_name(ho->new_lchan));
+
 	/* FIXME: do we actually want to do something here ? */
+	//rsl_ipacc_mdcx(new_lchan,
+	//	       old_lchan->abis_ip.connect_ip,
+	//	       old_lchan->abis_ip.connect_port, 0);
+	LOGP(DHO, LOGL_DEBUG, "? rsl_ipacc_mdcx(%s -> %x:%u)\n",
+	     gsm_lchan_name(new_lchan), 
+	     ho->old_lchan->abis_ip.connect_ip,
+	     ho->old_lchan->abis_ip.connect_port);
 
 	return 0;
 }
