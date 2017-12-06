@@ -107,8 +107,9 @@ struct gsm_subscriber_connection {
 	/* penalty timers for handover */
 	struct llist_head ho_penalty_timers;
 
-	/* Cache DTAP messages during handover/assignment */
-	struct llist_head assignment_queue;
+	/* Cache DTAP messages during handover/assignment (msgb_enqueue()/msgb_dequeue())*/
+	struct llist_head ho_dtap_cache;
+	unsigned int ho_dtap_cache_len;
 };
 
 static inline struct gsm_bts *conn_get_bts(struct gsm_subscriber_connection *conn) {

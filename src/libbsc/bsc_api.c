@@ -39,19 +39,14 @@
 
 #define GSM0808_T10_VALUE    6, 0
 
+#define HO_DTAP_CACHE_MSGB_CB_LINK_ID 0
+#define HO_DTAP_CACHE_MSGB_CB_ALLOW_SACCH 1
 
 static void rll_ind_cb(struct gsm_lchan *, uint8_t, void *, enum bsc_rllr_ind);
 static void send_sapi_reject(struct gsm_subscriber_connection *conn, int link_id);
 static void handle_release(struct gsm_subscriber_connection *conn, struct bsc_api *bsc, struct  gsm_lchan *lchan);
 static void handle_chan_ack(struct gsm_subscriber_connection *conn, struct bsc_api *bsc, struct  gsm_lchan *lchan);
 static void handle_chan_nack(struct gsm_subscriber_connection *conn, struct bsc_api *bsc, struct  gsm_lchan *lchan);
-
-struct assignment_queue {
-	struct llist_head entry;
-	struct msgb *msg;
-	int link_id;
-	int allow_sacch;
-};
 
 /* GSM 08.08 3.2.2.33 */
 static uint8_t lchan_to_chosen_channel(struct gsm_lchan *lchan)
@@ -278,9 +273,52 @@ struct gsm_subscriber_connection *bsc_subscr_con_allocate(struct gsm_lchan *lcha
 	conn->bts = lchan->ts->trx->bts;
 	lchan->conn = conn;
 	INIT_LLIST_HEAD(&conn->ho_penalty_timers);
-	INIT_LLIST_HEAD(&conn->assignment_queue);
+	INIT_LLIST_HEAD(&conn->ho_dtap_cache);
 	llist_add_tail(&conn->entry, &net->subscr_conns);
 	return conn;
+}
+
+static void ho_dtap_cache_add(struct gsm_subscriber_connection *conn, struct msgb *msg,
+			      int link_id, bool allow_sacch)
+{
+	if (conn->ho_dtap_cache_len >= 23) {
+		LOGP(DHO, LOGL_ERROR, "%s: Cannot cache more DTAP messages,"
+		     " already reached sane maximum of %u cached messages\n",
+		     bsc_subscr_name(conn->bsub), conn->ho_dtap_cache_len);
+		msgb_free(msg);
+		return;
+	}
+	conn->ho_dtap_cache_len ++;
+	LOGP(DHO, LOGL_DEBUG, "%s: Caching DTAP message during ho/ass (%u)\n",
+	     bsc_subscr_name(conn->bsub), conn->ho_dtap_cache_len);
+	msg->cb[HO_DTAP_CACHE_MSGB_CB_LINK_ID] = (unsigned long)link_id;
+	msg->cb[HO_DTAP_CACHE_MSGB_CB_ALLOW_SACCH] = allow_sacch ? 1 : 0;
+	msgb_enqueue(&conn->ho_dtap_cache, msg);
+}
+
+static void ho_dtap_cache_flush(struct gsm_subscriber_connection *conn, int send)
+{
+	struct msgb *msg;
+	unsigned int flushed_count = 0;
+
+	if (conn->secondary_lchan || conn->ho_lchan) {
+		LOGP(DHO, LOGL_ERROR, "%s: Cannot send cached DTAP messages, handover/assignment is still ongoing\n",
+		     bsc_subscr_name(conn->bsub));
+		send = 0;
+	}
+
+	while ((msg = msgb_dequeue(&conn->ho_dtap_cache))) {
+		conn->ho_dtap_cache_len --;
+		flushed_count ++;
+		if (send) {
+			int link_id = (int)msg->cb[HO_DTAP_CACHE_MSGB_CB_LINK_ID];
+			bool allow_sacch = !!msg->cb[HO_DTAP_CACHE_MSGB_CB_ALLOW_SACCH];
+			LOGP(DHO, LOGL_DEBUG, "%s: Sending cached DTAP message after handover/assignment (%u/%u)\n",
+			     bsc_subscr_name(conn->bsub), flushed_count, conn->ho_dtap_cache_len);
+			gsm0808_submit_dtap(conn, msg, link_id, allow_sacch);
+		} else
+			msgb_free(msg);
+	}
 }
 
 void bsc_subscr_con_free(struct gsm_subscriber_connection *conn)
@@ -315,35 +353,11 @@ void bsc_subscr_con_free(struct gsm_subscriber_connection *conn)
 		talloc_free(penalty);
 	}
 
-	/* flush pending messages */
-	flush_assignment_queue(conn, 0);
+	/* drop pending messages */
+	ho_dtap_cache_flush(conn, 0);
 
 	llist_del(&conn->entry);
 	talloc_free(conn);
-}
-
-static void flush_assignment_queue(struct gsm_subscriber_connection *conn, int send)
-{
-	struct assignment_queue *ass_queue;
-
-	if (conn->secondary_lchan || conn->ho_lchan) {
-		LOGP(DNM, LOGL_ERROR, "Cannot send queued messages, because "
-			"handover/assignment is still ongoing, please fix!\n");
-		send = 0;
-	}
-
-	while (!llist_empty(&conn->assignment_queue)) {
-		ass_queue = llist_entry(conn->assignment_queue.next,
-			struct assignment_queue, entry);
-		llist_del(&ass_queue->entry);
-		if (send) {
-			LOGP(DNM, LOGL_DEBUG, "Sending pending DTAP message\n");
-			gsm0808_submit_dtap(conn, ass_queue->msg,
-				ass_queue->link_id, ass_queue->allow_sacch);
-		} else
-			msgb_free(ass_queue->msg);
-		talloc_free(ass_queue);
-	}
 }
 
 int bsc_api_init(struct gsm_network *network, struct bsc_api *api)
@@ -368,13 +382,7 @@ int gsm0808_submit_dtap(struct gsm_subscriber_connection *conn,
 
 	/* buffer message during assignment / handover */
 	if (conn->secondary_lchan || conn->ho_lchan) {
-		struct assignment_queue *ass_queue;
-		LOGP(DNM, LOGL_DEBUG, "Queing DTAP message during ho/ass\n");
-		ass_queue = talloc_zero(tall_bsc_ctx, struct assignment_queue);
-		ass_queue->msg = msg;
-		ass_queue->link_id = link_id;
-		ass_queue->allow_sacch = allow_sacch;
-		llist_add_tail(&ass_queue->entry, &conn->assignment_queue);
+		ho_dtap_cache_add(conn, msg, link_id, !! allow_sacch);
 		return 0;
 	}
 
@@ -512,7 +520,7 @@ static void handle_ass_compl(struct gsm_subscriber_connection *conn,
 		/* FIXME: release old channel */
 
 		/* send pending messages, if any */
-		flush_assignment_queue(conn, 1);
+		ho_dtap_cache_flush(conn, 1);
 
 		return;
 	}
@@ -537,7 +545,7 @@ static void handle_ass_compl(struct gsm_subscriber_connection *conn,
 	conn->secondary_lchan = NULL;
 
 	/* send pending messages, if any */
-	flush_assignment_queue(conn, 1);
+	ho_dtap_cache_flush(conn, 1);
 
 	if (is_ipaccess_bts(conn_get_bts(conn)) && conn->lchan->tch_mode != GSM48_CMODE_SIGN)
 		rsl_ipacc_crcx(conn->lchan);
@@ -568,7 +576,7 @@ static void handle_ass_fail(struct gsm_subscriber_connection *conn,
 		/* FIXME: release allocated new channel */
 
 		/* send pending messages, if any */
-		flush_assignment_queue(conn, 1);
+		ho_dtap_cache_flush(conn, 1);
 
 		return;
 	}
@@ -586,7 +594,7 @@ static void handle_ass_fail(struct gsm_subscriber_connection *conn,
 	}
 
 	/* send pending messages, if any */
-	flush_assignment_queue(conn, 1);
+	ho_dtap_cache_flush(conn, 1);
 
 	gh = msgb_l3(msg);
 	if (msgb_l3len(msg) - sizeof(*gh) != 1) {
@@ -655,7 +663,7 @@ static void handle_rr_ho_compl(struct msgb *msg)
 	/* FIXME: release old channel */
 
 	/* send pending messages, if any */
-	flush_assignment_queue(msg->lchan->conn, 1);
+	ho_dtap_cache_flush(msg->lchan->conn, 1);
 }
 
 /* Chapter 9.1.17 Handover Failure */
@@ -673,7 +681,7 @@ static void handle_rr_ho_fail(struct msgb *msg)
 	/* FIXME: release allocated new channel */
 
 	/* send pending messages, if any */
-	flush_assignment_queue(msg->lchan->conn, 1);
+	ho_dtap_cache_flush(msg->lchan->conn, 1);
 }
 
 
