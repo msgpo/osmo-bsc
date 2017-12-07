@@ -60,6 +60,15 @@ static inline int bool2i(bool arg)
 		"Enable in-call handover\n" \
 		"Enable/disable handover: ") \
 	\
+	HO_CFG_ONE_MEMBER(int, algorithm, 1, \
+		"handover algorithm", "1|2", atoi, "%d", as_is, \
+		HO_CFG_STR_HANDOVER \
+		"Choose algorithm for handover decision\n" \
+		"Algorithm 1: trigger handover based on comparing current cell and neighbor RxLev and RxQual," \
+		" only.\n" \
+		"Algorithm 2: trigger handover on RxLev/RxQual, and also to balance the load across several" \
+		" cells. Consider available codecs. Prevent repeated handover by penalty timers.\n") \
+	\
 	HO_CFG_ONE_MEMBER(unsigned int, rxlev_avg_win, 10, \
 		"handover window rxlev averaging", "<1-10>", atoi, "%u", as_is, \
 		HO_CFG_STR_WIN_RXLEV \
