@@ -31,7 +31,7 @@ static struct handover_cfg *ho_cfg_from_vty(struct vty *vty)
 		return gsmnet_from_vty(vty)->ho;
 	case BTS_NODE:
 		OSMO_ASSERT(vty->index);
-		return ((struct gsm_bts *)vty->index)->ho;
+		return ((struct gsm_bts *)vty->index)->ho.cfg;
 	default:
 		OSMO_ASSERT(false);
 	}

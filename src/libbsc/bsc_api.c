@@ -323,8 +323,6 @@ static void ho_dtap_cache_flush(struct gsm_subscriber_connection *conn, int send
 
 void bsc_subscr_con_free(struct gsm_subscriber_connection *conn)
 {
-	struct ho_penalty_timer *penalty;
-
 	if (!conn)
 		return;
 
@@ -346,12 +344,7 @@ void bsc_subscr_con_free(struct gsm_subscriber_connection *conn)
 		conn->secondary_lchan->conn = NULL;
 	}
 
-	/* flush handover penalty timers */
-	while ((penalty = llist_first_entry_or_null(&conn->ho_penalty_timers,
-						    struct ho_penalty_timer, entry))) {
-		llist_del(&penalty->entry);
-		talloc_free(penalty);
-	}
+	conn_penalty_timer_clear(conn, NULL);
 
 	/* drop pending messages */
 	ho_dtap_cache_flush(conn, 0);
@@ -672,8 +665,8 @@ static void handle_rr_ho_fail(struct msgb *msg)
 	struct lchan_signal_data sig;
 	struct gsm48_hdr *gh = msgb_l3(msg);
 
-	DEBUGP(DRR, "HANDOVER FAILED cause = %s\n",
-		rr_cause_name(gh->data[0]));
+	DEBUGP(DRR, "HANDOVER FAILED cause = %s\n", rr_cause_name(gh->data[0]));
+	DEBUGP(DHO, "HANDOVER FAILED cause = %s\n", rr_cause_name(gh->data[0]));
 
 	sig.lchan = msg->lchan;
 	sig.mr = NULL;

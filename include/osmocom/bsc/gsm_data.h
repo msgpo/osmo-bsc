@@ -10,6 +10,7 @@
 #include <osmocom/core/rate_ctr.h>
 #include <osmocom/core/select.h>
 #include <osmocom/core/stats.h>
+#include <osmocom/gsm/protocol/gsm_08_08.h>
 
 #include <osmocom/crypt/auth.h>
 #include <osmocom/sigtran/sccp_sap.h>
@@ -72,8 +73,8 @@ struct gsm_classmark {
 /* penalty timers for handover */
 struct ho_penalty_timer {
 	struct llist_head entry;
-	uint8_t bts;
-	time_t timeout;
+	uint8_t bts_nr;
+	unsigned int timeout;
 };
 
 /* active radio connection of a mobile subscriber */
@@ -108,10 +109,20 @@ struct gsm_subscriber_connection {
 
 	/* penalty timers for handover */
 	struct llist_head ho_penalty_timers;
+	int ho_failure;
 
 	/* Cache DTAP messages during handover/assignment (msgb_enqueue()/msgb_dequeue())*/
 	struct llist_head ho_dtap_cache;
 	unsigned int ho_dtap_cache_len;
+
+	/* "Codec List (MSC Preferred)" as received by the BSSAP Assignment Request. 3GPP 48.008
+	 * 3.2.2.103 says:
+	 *         The "Codec List (MSC Preferred)" shall not include codecs
+	 *         that are not supported by the MS.
+	 * i.e. by heeding the "Codec list (MSC Preferred)", we inherently heed the MS bearer
+	 * capabilities, which the MSC is required to translate into the codec list. */
+	struct gsm0808_speech_codec_list codec_list;
+	bool codec_list_present;
 };
 
 static inline struct gsm_bts *conn_get_bts(struct gsm_subscriber_connection *conn) {
@@ -440,5 +451,12 @@ int gsm_bts_get_radio_link_timeout(const struct gsm_bts *bts);
 void gsm_bts_set_radio_link_timeout(struct gsm_bts *bts, int value);
 
 bool classmark_is_r99(struct gsm_classmark *cm);
+
+void conn_penalty_timer_add(struct gsm_subscriber_connection *conn,
+			    struct gsm_bts *bts, int timeout);
+unsigned int conn_penalty_timer_remaining(struct gsm_subscriber_connection *conn,
+					  struct gsm_bts *bts);
+void conn_penalty_timer_clear(struct gsm_subscriber_connection *conn,
+			      struct gsm_bts *bts);
 
 #endif /* _GSM_DATA_H */

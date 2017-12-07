@@ -25,9 +25,11 @@
 #include <ctype.h>
 #include <stdbool.h>
 #include <netinet/in.h>
+#include <time.h>
 
 #include <osmocom/core/linuxlist.h>
 #include <osmocom/core/talloc.h>
+#include <osmocom/core/signal.h>
 #include <osmocom/gsm/gsm_utils.h>
 #include <osmocom/gsm/abis_nm.h>
 #include <osmocom/core/statistics.h>
@@ -38,6 +40,7 @@
 #include <osmocom/bsc/bsc_msc_data.h>
 #include <osmocom/bsc/abis_nm.h>
 #include <osmocom/bsc/handover_cfg.h>
+#include <osmocom/bsc/signal.h>
 
 void *tall_bsc_ctx;
 
@@ -266,6 +269,8 @@ struct gsm_bts *gsm_bts_alloc_register(struct gsm_network *net, enum gsm_bts_typ
 
 	INIT_LLIST_HEAD(&bts->loc_list);
 
+	osmo_signal_dispatch(SS_L_GLOBAL, S_GLOBAL_BTS_NEW, bts);
+
 	return bts;
 }
 
@@ -415,4 +420,74 @@ bool classmark_is_r99(struct gsm_classmark *cm)
 	else if (cm->classmark2_len > 0)
 		rev_lev = (cm->classmark2[0] >> 5) & 0x3;
 	return rev_lev >= 2;
+}
+
+static unsigned int time_now(void)
+{
+	time_t now;
+	time(&now);
+	return (unsigned int)now;
+}
+
+void conn_penalty_timer_add(struct gsm_subscriber_connection *conn,
+			    struct gsm_bts *bts, int timeout)
+{
+	struct ho_penalty_timer *timer;
+	unsigned int now;
+	unsigned int then;
+	now = time_now();
+
+	/* no not add timer, if there is no timeout set */
+	if (!timeout)
+		return;
+
+	then = now + timeout;
+
+	/* timer already running for that BTS? */
+	llist_for_each_entry(timer, &conn->ho_penalty_timers, entry) {
+		if (timer->bts_nr != bts->nr)
+			continue;
+		/* raise, if running timer will timeout earlier or has timed
+		 * out already, otherwise keep later timeout */
+		if (timer->timeout < then)
+			timer->timeout = then;
+		return;
+	}
+
+	/* add new timer */
+	timer = talloc_zero(tall_bsc_ctx, struct ho_penalty_timer);
+	if (!timer)
+		return;
+
+	timer->bts_nr = bts->nr;
+	timer->timeout = then;
+
+	llist_add_tail(&timer->entry, &conn->ho_penalty_timers);
+}
+
+unsigned int conn_penalty_timer_remaining(struct gsm_subscriber_connection *conn,
+					  struct gsm_bts *bts)
+{
+	struct ho_penalty_timer *timer;
+	unsigned int now = time_now();
+	llist_for_each_entry(timer, &conn->ho_penalty_timers, entry) {
+		if (timer->bts_nr != bts->nr)
+			continue;
+		if (now > timer->timeout)
+			continue;
+		return timer->timeout - now;
+	}
+	return 0;
+}
+
+void conn_penalty_timer_clear(struct gsm_subscriber_connection *conn,
+			      struct gsm_bts *bts)
+{
+	struct ho_penalty_timer *timer, *timer2;
+	llist_for_each_entry_safe(timer, timer2, &conn->ho_penalty_timers, entry) {
+		if (bts && timer->bts_nr != bts->nr)
+			continue;
+		llist_del(&timer->entry);
+		talloc_free(timer);
+	}
 }

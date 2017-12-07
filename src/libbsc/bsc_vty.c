@@ -183,7 +183,7 @@ static void net_dump_vty(struct vty *vty, struct gsm_network *net)
 		unsigned int ho_inactive_count = 0;
 
 		llist_for_each_entry(bts, &net->bts_list, list) {
-			if (ho_get_ho_active(bts->ho))
+			if (ho_get_ho_active(bts->ho.cfg))
 				ho_active_count ++;
 			else
 				ho_inactive_count ++;
@@ -795,7 +795,7 @@ static void config_write_bts_single(struct vty *vty, struct gsm_bts *bts)
 	if (bts->pcu_sock_path)
 		vty_out(vty, "  pcu-socket %s%s", bts->pcu_sock_path, VTY_NEWLINE);
 
-	ho_vty_write(vty, "  ", bts->ho);
+	ho_vty_write(vty, "  ", bts->ho.cfg);
 
 	config_write_bts_model(vty, bts);
 }

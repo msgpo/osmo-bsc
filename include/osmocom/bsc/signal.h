@@ -104,6 +104,7 @@ enum signal_ipaccess {
 
 enum signal_global {
 	S_GLOBAL_BTS_CLOSE_OM,
+	S_GLOBAL_BTS_NEW,
 };
 
 /* SS_RF signals */

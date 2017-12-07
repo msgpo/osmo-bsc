@@ -801,7 +801,11 @@ struct gsm_bts {
 
 	struct rate_ctr_group *bts_ctrs;
 
-	struct handover_cfg *ho;
+	struct {
+		struct handover_cfg *cfg;
+		struct osmo_timer_list congestion_check_timer;
+		/* todo: move them here */ //struct llist_head penalty_timeouts;
+	} ho;
 };
 
 

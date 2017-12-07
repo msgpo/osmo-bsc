@@ -20,6 +20,13 @@ struct handover_cfg *ho_cfg_init(void *ctx, enum handover_cfg_ctx_type ctx_type,
 
 typedef void (*ho_cfg_on_change_cb_t)(void *ctx, enum handover_cfg_ctx_type ctx_type);
 
+/* ho_cfg_* code gets called during initialization of the global gsm_network struct, which is included in
+ * various utility programs that don't need most of gsm_data.c, definitely no handover. The on_change
+ * callback from the ho_cfg touches internals of the handover decision, which would cause utility
+ * programs to require linking of most of the handover code. To break this linking cascade, have the
+ * on_change callbacks as function pointers. */
+extern ho_cfg_on_change_cb_t ho_cfg_on_change_congestion_check_interval_cb;
+
 #define HO_CFG_STR_HANDOVER "Handover options\n"
 #define HO_CFG_STR_WIN HO_CFG_STR_HANDOVER "Measurement averaging settings\n"
 #define HO_CFG_STR_WIN_RXLEV HO_CFG_STR_WIN "Received-Level averaging\n"
@@ -157,7 +164,8 @@ static inline const char *congestion_check_interval2a(int val)
 		"Disable in-call assignment\n" \
 		"Enable in-call assignment\n") \
 	\
-	HO_CFG_ONE_MEMBER(int, congestion_check_interval, 10, NULL, \
+	HO_CFG_ONE_MEMBER(int, congestion_check_interval, 10, \
+		ho_cfg_on_change_congestion_check_interval_cb, \
 		"handover congestion-check", "disabled|<1-60>", \
 		a2congestion_check_interval, "%s", congestion_check_interval2a, \
 		HO_CFG_STR_HANDOVER \

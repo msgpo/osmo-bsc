@@ -56,5 +56,6 @@ libbsc_a_SOURCES = \
 	bsc_dyn_ts.c \
 	bts_ipaccess_nanobts_omlattr.c \
 	handover_vty.c \
+	handover_decision_2.c \
 	$(NULL)
 

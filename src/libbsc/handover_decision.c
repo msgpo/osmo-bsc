@@ -215,10 +215,10 @@ static int attempt_handover(struct gsm_meas_rep *mr)
 			continue;
 
 		/* caculate average rxlev for this cell over the window */
-		avg = neigh_meas_avg(nmp, ho_get_rxlev_neigh_avg_win(bts->ho));
+		avg = neigh_meas_avg(nmp, ho_get_rxlev_neigh_avg_win(bts->ho.cfg));
 
 		/* check if hysteresis is fulfilled */
-		if (avg < mr->dl.full.rx_lev + ho_get_pwr_hysteresis(bts->ho))
+		if (avg < mr->dl.full.rx_lev + ho_get_pwr_hysteresis(bts->ho.cfg))
 			continue;
 
 		better = avg - mr->dl.full.rx_lev;
@@ -233,7 +233,7 @@ static int attempt_handover(struct gsm_meas_rep *mr)
 
 	LOGP(DHODEC, LOGL_INFO, "%s: Cell on ARFCN %u is better: ",
 		gsm_ts_name(mr->lchan->ts), best_cell->arfcn);
-	if (!ho_get_ho_active(bts->ho)) {
+	if (!ho_get_ho_active(bts->ho.cfg)) {
 		LOGPC(DHODEC, LOGL_INFO, "Skipping, Handover disabled\n");
 		return 0;
 	}
@@ -264,7 +264,7 @@ static int process_meas_rep(struct gsm_meas_rep *mr)
 	int av_rxlev;
 
 	/* If this cell does not use handover algorithm 1, then we're not responsible. */
-	if (ho_get_algorithm(bts->ho) != 1)
+	if (ho_get_algorithm(bts->ho.cfg) != 1)
 		return 0;
 
 	/* we currently only do handover for TCH channels */
@@ -289,7 +289,7 @@ static int process_meas_rep(struct gsm_meas_rep *mr)
 		process_meas_neigh(mr);
 
 	av_rxlev = get_meas_rep_avg(mr->lchan, dlev,
-				    ho_get_rxlev_avg_win(bts->ho));
+				    ho_get_rxlev_avg_win(bts->ho.cfg));
 
 	/* Interference HO */
 	if (rxlev2dbm(av_rxlev) > -85 &&
@@ -314,14 +314,14 @@ static int process_meas_rep(struct gsm_meas_rep *mr)
 	}
 
 	/* Distance */
-	if (mr->ms_l1.ta > ho_get_max_distance(bts->ho))
+	if (mr->ms_l1.ta > ho_get_max_distance(bts->ho.cfg)) {
 		LOGPC(DHO, LOGL_INFO, "HO cause: Distance av_rxlev=%d dbm ta=%d \n",
 					rxlev2dbm(av_rxlev), mr->ms_l1.ta);
 		return attempt_handover(mr);
 	}
 
 	/* Power Budget AKA Better Cell */
-	if ((mr->nr % ho_get_pwr_interval(bts->ho)) == 0)
+	if ((mr->nr % ho_get_pwr_interval(bts->ho.cfg)) == 0)
 		return attempt_handover(mr);
 
 	return 0;

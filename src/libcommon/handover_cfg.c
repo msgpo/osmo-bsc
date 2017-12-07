@@ -23,9 +23,14 @@
 #include <stdbool.h>
 #include <talloc.h>
 
+#include <osmocom/bsc/debug.h>
+
 #include <osmocom/bsc/vty.h>
+#include <osmocom/bsc/handover_decision_2.h>
 #include <osmocom/bsc/handover_cfg.h>
 #include <osmocom/bsc/gsm_data.h>
+
+ho_cfg_on_change_cb_t ho_cfg_on_change_congestion_check_interval_cb = NULL;
 
 struct handover_cfg {
 	struct handover_cfg *higher_level_cfg;

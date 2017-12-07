@@ -29,6 +29,8 @@
 #include <osmocom/bsc/ipaccess.h>
 #include <osmocom/bsc/ctrl.h>
 #include <osmocom/bsc/osmo_bsc_sigtran.h>
+#include <osmocom/bsc/handover_decision.h>
+#include <osmocom/bsc/handover_decision_2.h>
 
 #include <osmocom/ctrl/control_cmd.h>
 #include <osmocom/ctrl/control_if.h>
@@ -294,6 +296,7 @@ int main(int argc, char **argv)
 	}
 
 	handover_decision_1_init();
+	handover_decision_2_init(bsc_gsmnet);
 
 	signal(SIGINT, &signal_handler);
 	signal(SIGTERM, &signal_handler);

@@ -514,7 +514,6 @@ static int bssmap_handle_assignm_req(struct osmo_bsc_sccp_con *conn,
 	bool aoip = false;
 	struct sockaddr_storage rtp_addr;
 	struct gsm0808_channel_type ct;
-	struct gsm0808_speech_codec_list scl;
 	struct gsm0808_speech_codec_list *scl_ptr = NULL;
 	int rc;
 	const uint8_t *data;
@@ -560,6 +559,7 @@ static int bssmap_handle_assignm_req(struct osmo_bsc_sccp_con *conn,
 	}
 
 	/* Decode speech codec list (AoIP) */
+	conn->conn->codec_list_present = false;
 	if (aoip) {
 		/* Check for speech codec list element */
 		if (!TLVP_PRESENT(&tp, GSM0808_IE_SPEECH_CODEC_LIST)) {
@@ -571,13 +571,14 @@ static int bssmap_handle_assignm_req(struct osmo_bsc_sccp_con *conn,
 		/* Decode Speech Codec list */
 		data = TLVP_VAL(&tp, GSM0808_IE_SPEECH_CODEC_LIST);
 		len = TLVP_LEN(&tp, GSM0808_IE_SPEECH_CODEC_LIST);
-		rc = gsm0808_dec_speech_codec_list(&scl, data, len);
+		rc = gsm0808_dec_speech_codec_list(&conn->conn->codec_list, data, len);
 		if (rc < 0) {
 			LOGP(DMSC, LOGL_ERROR,
 			     "Unable to decode speech codec list\n");
 			goto reject;
 		}
-		scl_ptr = &scl;
+		conn->conn->codec_list_present = true;
+		scl_ptr = &conn->conn->codec_list;
 	}
 
 	/* Decode Channel Type element */
