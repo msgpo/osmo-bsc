@@ -38,7 +38,7 @@ static struct handover_cfg *ho_cfg_from_vty(struct vty *vty)
 }
 
 
-#define HO_CFG_ONE_MEMBER(TYPE, NAME, DEFAULT_VAL, \
+#define HO_CFG_ONE_MEMBER(TYPE, NAME, DEFAULT_VAL, ON_CHANGE, \
 			  VTY_CMD, VTY_CMD_ARG, VTY_ARG_EVAL, \
 			  VTY_WRITE_FMT, VTY_WRITE_CONV, \
 			  VTY_DOC) \
@@ -72,7 +72,7 @@ HO_CFG_ALL_MEMBERS
 
 void ho_vty_write(struct vty *vty, const char *indent, struct handover_cfg *ho)
 {
-#define HO_CFG_ONE_MEMBER(TYPE, NAME, DEFAULT_VAL, \
+#define HO_CFG_ONE_MEMBER(TYPE, NAME, DEFAULT_VAL, ON_CHANGE, \
 			  VTY_CMD, VTY_CMD_ARG, VTY_ARG_EVAL, \
 			  VTY_WRITE_FMT, VTY_WRITE_CONV, \
 			  VTY_DOC) \
@@ -86,7 +86,7 @@ void ho_vty_write(struct vty *vty, const char *indent, struct handover_cfg *ho)
 
 static void ho_vty_init_cmds(int parent_node)
 {
-#define HO_CFG_ONE_MEMBER(TYPE, NAME, DEFAULT_VAL, VTY1, VTY2, VTY3, VTY4, VTY5, VTY6) \
+#define HO_CFG_ONE_MEMBER(TYPE, NAME, DEFAULT_VAL, ON_CHANGE, VTY1, VTY2, VTY3, VTY4, VTY5, VTY6) \
 	install_element(parent_node, &cfg_ho_##NAME##_cmd);
 
 	HO_CFG_ALL_MEMBERS

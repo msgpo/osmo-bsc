@@ -375,7 +375,7 @@ struct gsm_bts *gsm_bts_alloc(struct gsm_network *net, uint8_t bts_num)
 	/* si handling */
 	bts->bcch_change_mark = 1;
 
-	bts->ho = ho_cfg_init(bts, net->ho);
+	bts->ho = ho_cfg_init(bts, HO_CFG_CTX_BTS, net->ho);
 
 	return bts;
 }

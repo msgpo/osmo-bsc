@@ -30,7 +30,10 @@
 struct handover_cfg {
 	struct handover_cfg *higher_level_cfg;
 
-#define HO_CFG_ONE_MEMBER(TYPE, NAME, DEFAULT_VAL, VTY1, VTY2, VTY3, VTY4, VTY5, VTY6) \
+	void *ctx;
+	int ctx_type;
+
+#define HO_CFG_ONE_MEMBER(TYPE, NAME, DEFAULT_VAL, ON_CHANGE, VTY1, VTY2, VTY3, VTY4, VTY5, VTY6) \
 	TYPE NAME; \
 	bool has_##NAME;
 
@@ -38,15 +41,18 @@ struct handover_cfg {
 #undef HO_CFG_ONE_MEMBER
 };
 
-struct handover_cfg *ho_cfg_init(void *ctx, struct handover_cfg *higher_level_cfg)
+struct handover_cfg *ho_cfg_init(void *ctx, enum handover_cfg_ctx_type ctx_type,
+				 struct handover_cfg *higher_level_cfg)
 {
 	struct handover_cfg *ho = talloc_zero(ctx, struct handover_cfg);
 	OSMO_ASSERT(ho);
 	ho->higher_level_cfg = higher_level_cfg;
+	ho->ctx = ctx;
+	ho->ctx_type = ctx_type;
 	return ho;
 }
 
-#define HO_CFG_ONE_MEMBER(TYPE, NAME, DEFAULT_VAL, VTY1, VTY2, VTY_ARG_EVAL, VTY4, VTY5, VTY6) \
+#define HO_CFG_ONE_MEMBER(TYPE, NAME, DEFAULT_VAL, ON_CHANGE, VTY1, VTY2, VTY_ARG_EVAL, VTY4, VTY5, VTY6) \
 TYPE ho_get_##NAME(struct handover_cfg *ho) \
 { \
 	if (ho->has_##NAME) \
@@ -58,8 +64,12 @@ TYPE ho_get_##NAME(struct handover_cfg *ho) \
 \
 void ho_set_##NAME(struct handover_cfg *ho, TYPE value) \
 { \
+	ho_cfg_on_change_cb_t cb = ON_CHANGE; \
 	ho->NAME = value; \
 	ho->has_##NAME = true; \
+	\
+	if (cb) \
+		cb(ho->ctx, ho->ctx_type); \
 } \
 \
 bool ho_isset_##NAME(struct handover_cfg *ho) \

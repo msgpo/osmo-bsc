@@ -10,7 +10,15 @@ struct vty;
  * the defaults from 'network' level are used implicitly, and changes take effect immediately. */
 struct handover_cfg;
 
-struct handover_cfg *ho_cfg_init(void *ctx, struct handover_cfg *higher_level_cfg);
+enum handover_cfg_ctx_type {
+	HO_CFG_CTX_NET,
+	HO_CFG_CTX_BTS,
+};
+
+struct handover_cfg *ho_cfg_init(void *ctx, enum handover_cfg_ctx_type ctx_type,
+				 struct handover_cfg *higher_level_cfg);
+
+typedef void (*ho_cfg_on_change_cb_t)(void *ctx, enum handover_cfg_ctx_type ctx_type);
 
 #define HO_CFG_STR_HANDOVER "Handover options\n"
 #define HO_CFG_STR_WIN HO_CFG_STR_HANDOVER "Measurement averaging settings\n"
@@ -67,6 +75,7 @@ static inline const char *congestion_check_interval2a(int val)
 /* The HO_CFG_ONE_MEMBER macro gets redefined, depending on whether to define struct members,
  * function declarations or definitions... It is of the format
  *   HO_CFG_ONE_MEMBER(TYPE, NAME, DEFAULT_VAL,
+ *                     ON_CHANGE,
  *                     VTY_CMD, VTY_CMD_ARG, VTY_ARG_EVAL,
  *                     VTY_WRITE_FMT, VTY_WRITE_CONV,
  *                     VTY_DOC)
@@ -77,6 +86,7 @@ static inline const char *congestion_check_interval2a(int val)
  * TYPE: a type name like int.
  * NAME: a variable name suitable for a struct member.
  * DEFAULT_VAL: default value, as passed to the VTY, e.g. '0' or 'foo', without quotes.
+ * ON_CHANGE: a ho_cfg_on_change_cb_t callback to invoke from ho_set_*(), or NULL.
  * VTY_CMD: a command string for VTY without any arguments.
  * VTY_CMD_ARG: VTY value range like '<0-23>' or 'foo|bar', will become '(VTY_CMD_ARG|default)'.
  * VTY_ARG_EVAL: function name for parsing the VTY arg[0], e.g. 'atoi'.
@@ -86,14 +96,14 @@ static inline const char *congestion_check_interval2a(int val)
  */
 #define HO_CFG_ALL_MEMBERS \
 	\
-	HO_CFG_ONE_MEMBER(bool, ho_active, 0, \
+	HO_CFG_ONE_MEMBER(bool, ho_active, 0, NULL, \
 		"handover", "0|1", a2bool, "%d", bool2i, \
 		HO_CFG_STR_HANDOVER \
 		"Disable in-call handover\n" \
 		"Enable in-call handover\n" \
 		"Enable/disable handover: ") \
 	\
-	HO_CFG_ONE_MEMBER(int, algorithm, 1, \
+	HO_CFG_ONE_MEMBER(int, algorithm, 1, NULL, \
 		"handover algorithm", "1|2", atoi, "%d", as_is, \
 		HO_CFG_STR_HANDOVER \
 		"Choose algorithm for handover decision\n" \
@@ -102,52 +112,52 @@ static inline const char *congestion_check_interval2a(int val)
 		"Algorithm 2: trigger handover on RxLev/RxQual, and also to balance the load across several" \
 		" cells. Consider available codecs. Prevent repeated handover by penalty timers.\n") \
 	\
-	HO_CFG_ONE_MEMBER(unsigned int, rxlev_avg_win, 10, \
+	HO_CFG_ONE_MEMBER(unsigned int, rxlev_avg_win, 10, NULL, \
 		"handover window rxlev averaging", "<1-10>", atoi, "%u", as_is, \
 		HO_CFG_STR_WIN_RXLEV \
 		"How many RxLev measurements are used for averaging\n" \
 		"RxLev averaging: " HO_CFG_STR_AVG_COUNT) \
 	\
-	HO_CFG_ONE_MEMBER(unsigned int, rxqual_avg_win, 1, \
+	HO_CFG_ONE_MEMBER(unsigned int, rxqual_avg_win, 1, NULL, \
 		"handover window rxqual averaging", "<1-10>", atoi, "%u", as_is, \
 		HO_CFG_STR_WIN_RXQUAL \
 		"How many RxQual measurements are used for averaging\n" \
 		"RxQual averaging: " HO_CFG_STR_AVG_COUNT) \
 	\
-	HO_CFG_ONE_MEMBER(unsigned int, rxlev_neigh_avg_win, 10, \
+	HO_CFG_ONE_MEMBER(unsigned int, rxlev_neigh_avg_win, 10, NULL, \
 		"handover window rxlev neighbor averaging", "<1-10>", atoi, "%u", as_is, \
 		HO_CFG_STR_WIN_RXLEV \
 		"How many Neighbor RxLev measurements are used for averaging\n" \
 		"How many Neighbor RxLev measurements are used for averaging\n" \
 		"Neighbor RxLev averaging: " HO_CFG_STR_AVG_COUNT) \
 	\
-	HO_CFG_ONE_MEMBER(unsigned int, pwr_interval, 6, \
+	HO_CFG_ONE_MEMBER(unsigned int, pwr_interval, 6, NULL, \
 		"handover power budget interval", "<1-99>", atoi, "%u", as_is, \
 		HO_CFG_STR_POWER_BUDGET \
 		"How often to check for a better cell (SACCH frames)\n" \
 		"Check for stronger neighbor every N number of SACCH frames\n") \
 	\
-	HO_CFG_ONE_MEMBER(unsigned int, pwr_hysteresis, 3, \
+	HO_CFG_ONE_MEMBER(unsigned int, pwr_hysteresis, 3, NULL, \
 		"handover power budget hysteresis", "<0-999>", atoi, "%u", as_is, \
 		HO_CFG_STR_POWER_BUDGET \
 		"How many dBm stronger must a neighbor be to become a HO candidate\n" \
 		"Neighbor's strength difference in dBm\n") \
 	\
-	HO_CFG_ONE_MEMBER(unsigned int, max_distance, 9999, \
+	HO_CFG_ONE_MEMBER(unsigned int, max_distance, 9999, NULL, \
 		"handover maximum distance" , "<0-9999>", atoi, "%u", as_is, \
 		HO_CFG_STR_HANDOVER \
 		"Maximum Timing-Advance value (i.e. MS distance) before triggering HO\n" \
 		"Maximum Timing-Advance value (i.e. MS distance) before triggering HO\n" \
 		"Maximum Timing-Advance value (i.e. MS distance) before triggering HO\n") \
 	\
-	HO_CFG_ONE_MEMBER(bool, as_active, 0, \
+	HO_CFG_ONE_MEMBER(bool, as_active, 0, NULL, \
 		"handover assignment", "0|1", a2bool, "%d", bool2i, \
 		HO_CFG_STR_HANDOVER \
 		"Enable or disable in-call channel re-assignment" HO_CFG_STR_2 \
 		"Disable in-call assignment\n" \
 		"Enable in-call assignment\n") \
 	\
-	HO_CFG_ONE_MEMBER(int, congestion_check_interval, 10, \
+	HO_CFG_ONE_MEMBER(int, congestion_check_interval, 10, NULL, \
 		"handover congestion-check", "disabled|<1-60>", \
 		a2congestion_check_interval, "%s", congestion_check_interval2a, \
 		HO_CFG_STR_HANDOVER \
@@ -155,83 +165,83 @@ static inline const char *congestion_check_interval2a(int val)
 		"Disable congestion checking, do not handover based on cell overload\n" \
 		"Congestion check interval in seconds\n") \
 	\
-	HO_CFG_ONE_MEMBER(bool, full_tdma, subset, \
+	HO_CFG_ONE_MEMBER(bool, full_tdma, subset, NULL, \
 		"handover tdma-measurement", "full|subset", a2tdma, "%s", tdma2a, \
 		HO_CFG_STR_HANDOVER \
 		"Define measurement set of TDMA frames" HO_CFG_STR_2 \
 		"Full set of 102/104 TDMA frames\n" \
 		"Sub set of 4 TDMA frames (SACCH)\n") \
 	\
-	HO_CFG_ONE_MEMBER(int, min_rxlev, -100, \
+	HO_CFG_ONE_MEMBER(int, min_rxlev, -100, NULL, \
 		"handover min rxlev", "<-110--50>", atoi, "%d", as_is, \
 		HO_CFG_STR_HANDOVER \
 		HO_CFG_STR_MIN \
 		"How weak may RxLev of an MS become before triggering HO\n" \
 		"minimum RxLev (dBm)\n") \
 	\
-	HO_CFG_ONE_MEMBER(int, min_rxqual, 5, \
+	HO_CFG_ONE_MEMBER(int, min_rxqual, 5, NULL, \
 		"handover min rxqual", "<0-7>", atoi, "%d", as_is, \
 		HO_CFG_STR_HANDOVER \
 		HO_CFG_STR_MIN \
 		"How bad may RxQual of an MS become before triggering HO\n" \
 		"minimum RxQual (dBm)\n") \
 	\
-	HO_CFG_ONE_MEMBER(int, afs_bias_rxlev, 0, \
+	HO_CFG_ONE_MEMBER(int, afs_bias_rxlev, 0, NULL, \
 		"handover afs-bias rxlev", "<0-20>", atoi, "%d", as_is, \
 		HO_CFG_STR_HANDOVER \
 		HO_CFG_STR_AFS_BIAS \
 		"RxLev improvement bias for AFS over other codecs\n" \
 		"Virtual RxLev improvement (dBm)\n") \
 	\
-	HO_CFG_ONE_MEMBER(int, afs_bias_rxqual, 0, \
+	HO_CFG_ONE_MEMBER(int, afs_bias_rxqual, 0, NULL, \
 		"handover afs-bias rxqual", "<0-7>", atoi, "%d", as_is, \
 		HO_CFG_STR_HANDOVER \
 		HO_CFG_STR_AFS_BIAS \
 		"RxQual improvement bias for AFS over other codecs\n" \
 		"Virtual RxQual improvement (dBm)\n") \
 	\
-	HO_CFG_ONE_MEMBER(int, tchf_min_slots, 0, \
+	HO_CFG_ONE_MEMBER(int, tchf_min_slots, 0, NULL, \
 		"handover min-free-slots tch/f", "<0-9999>", atoi, "%d", as_is, \
 		HO_CFG_STR_HANDOVER \
 		HO_CFG_STR_MIN_TCH \
 		"Minimum free TCH/F timeslots before cell is considered congested\n" \
 		"Number of TCH/F slots\n") \
 	\
-	HO_CFG_ONE_MEMBER(int, tchh_min_slots, 0, \
+	HO_CFG_ONE_MEMBER(int, tchh_min_slots, 0, NULL, \
 		"handover min-free-slots tch/h", "<0-9999>", atoi, "%d", as_is, \
 		HO_CFG_STR_HANDOVER \
 		HO_CFG_STR_MIN_TCH \
 		"Minimum free TCH/H timeslots before cell is considered congested\n" \
 		"Number of TCH/H slots\n") \
 	\
-	HO_CFG_ONE_MEMBER(int, ho_max, 9999, \
+	HO_CFG_ONE_MEMBER(int, ho_max, 9999, NULL, \
 		"handover max-handovers", "<1-9999>", atoi, "%d", as_is, \
 		HO_CFG_STR_HANDOVER \
 		"Maximum number of concurrent handovers allowed per cell" HO_CFG_STR_2 \
 		"Number\n") \
 	\
-	HO_CFG_ONE_MEMBER(int, penalty_max_dist, 300, \
+	HO_CFG_ONE_MEMBER(int, penalty_max_dist, 300, NULL, \
 		"handover penalty-time max-distance", "<0-99999>", atoi, "%d", as_is, \
 		HO_CFG_STR_HANDOVER \
 		HO_CFG_STR_PENALTY_TIME \
 		"Time to suspend handovers after leaving this cell due to exceeding max distance\n" \
 		"Seconds\n") \
 	\
-	HO_CFG_ONE_MEMBER(int, penalty_failed_ho, 60, \
+	HO_CFG_ONE_MEMBER(int, penalty_failed_ho, 60, NULL, \
 		"handover penalty-time failed-ho", "<0-99999>", atoi, "%d", as_is, \
 		HO_CFG_STR_HANDOVER \
 		HO_CFG_STR_PENALTY_TIME \
 		"Time to suspend handovers after handover failure to this cell\n" \
 		"Seconds\n") \
 	\
-	HO_CFG_ONE_MEMBER(int, penalty_failed_as, 60, \
+	HO_CFG_ONE_MEMBER(int, penalty_failed_as, 60, NULL, \
 		"handover penalty-time failed-assignment", "<0-99999>", atoi, "%d", as_is, \
 		HO_CFG_STR_HANDOVER \
 		HO_CFG_STR_PENALTY_TIME \
 		"Time to suspend handovers after assignment failure in this cell\n" \
 		"Seconds\n") \
 	\
-	HO_CFG_ONE_MEMBER(int, retries, 0, \
+	HO_CFG_ONE_MEMBER(int, retries, 0, NULL, \
 		"handover retries", "<0-9>", atoi, "%d", as_is, \
 		HO_CFG_STR_HANDOVER \
 		"Immediately retry on handover/assignment failure" HO_CFG_STR_2 \
@@ -240,7 +250,7 @@ static inline const char *congestion_check_interval2a(int val)
 
 /* Declare public API for handover cfg parameters... */
  
-#define HO_CFG_ONE_MEMBER(TYPE, NAME, DEFAULT_VAL, VTY1, VTY2, VTY3, VTY4, VTY5, VTY6) \
+#define HO_CFG_ONE_MEMBER(TYPE, NAME, DEFAULT_VAL, ON_CHANGE, VTY1, VTY2, VTY3, VTY4, VTY5, VTY6) \
 	TYPE ho_get_##NAME(struct handover_cfg *ho); \
 	void ho_set_##NAME(struct handover_cfg *ho, TYPE val); \
 	bool ho_isset_##NAME(struct handover_cfg *ho); \

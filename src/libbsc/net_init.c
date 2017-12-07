@@ -56,7 +56,7 @@ struct gsm_network *bsc_network_init(void *ctx,
 	net->T3122 = GSM_T3122_DEFAULT;
 	net->T3141 = GSM_T3141_DEFAULT;
 
-	net->ho = ho_cfg_init(net, NULL);
+	net->ho = ho_cfg_init(net, HO_CFG_CTX_NET, NULL);
 
 	INIT_LLIST_HEAD(&net->bts_list);
 
