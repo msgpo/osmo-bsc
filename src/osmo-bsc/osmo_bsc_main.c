@@ -293,6 +293,8 @@ int main(int argc, char **argv)
 		exit(1);
 	}
 
+	handover_decision_1_init();
+
 	signal(SIGINT, &signal_handler);
 	signal(SIGTERM, &signal_handler);
 	signal(SIGABRT, &signal_handler);
