@@ -186,7 +186,15 @@ static struct gsm_bts *create_bts(int arfcn)
 
 void create_conn(struct gsm_lchan *lchan)
 {
+	static unsigned int next_imsi = 0;
+	struct gsm_network *net = lchan->ts->trx->bts->network;
+	char imsi[sizeof(lchan->conn->bsub->imsi)];
+
+	next_imsi ++;
+	snprintf(imsi, sizeof(imsi), "%06u", next_imsi);
+
 	lchan->conn = bsc_subscr_con_allocate(lchan);
+	lchan->conn->bsub = bsc_subscr_find_or_create_by_imsi(net->bsc_subscribers, imsi);
 }
 
 /* create lchan */

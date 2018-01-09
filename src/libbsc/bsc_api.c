@@ -354,6 +354,11 @@ void bsc_subscr_con_free(struct gsm_subscriber_connection *conn)
 
 	penalty_timers_free(&conn->hodec2.penalty_timers);
 
+	if (conn->bsub) {
+		bsc_subscr_put(conn->bsub);
+		conn->bsub = NULL;
+	}
+
 	llist_del(&conn->entry);
 	talloc_free(conn);
 }
