@@ -349,6 +349,11 @@ void bsc_subscr_con_free(struct gsm_subscriber_connection *conn)
 	/* drop pending messages */
 	ho_dtap_cache_flush(conn, 0);
 
+	if (conn->bsub) {
+		bsc_subscr_put(conn->bsub);
+		conn->bsub = NULL;
+	}
+
 	llist_del(&conn->entry);
 	talloc_free(conn);
 }
