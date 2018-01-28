@@ -351,6 +351,7 @@ static void gscon_fsm_allstate(struct osmo_fsm_inst *fi, uint32_t event, void *d
 		/* MSC or SIGTRAN network has hard-released SCCP connection */
 		/* hard-release the lchan */
 		/* hard-release any MGCP state */
+		osmo_fsm_inst_term(fi, OSMO_FSM_TERM_REGULAR, NULL);
 		break;
 	case GSCON_EV_RLL_REL_IND:
 		/* BTS reports that one of the LAPDm data links was released */
