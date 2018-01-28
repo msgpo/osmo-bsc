@@ -100,8 +100,11 @@ static void gscon_fsm_init(struct osmo_fsm_inst *fi, uint32_t event, void *data)
 		rc = osmo_bsc_sigtran_open_conn(conn, msg);
 		if (rc < 0) {
 			osmo_fsm_inst_term(fi, OSMO_FSM_TERM_ERROR, NULL);
-		} else
-			osmo_fsm_inst_state_chg(fi, ST_WAIT_CC, 0, 0);
+		} else {
+			/* SCCP T(conn est) is 1-2 minutes, way too long. The MS will timeout
+			 * using T3210 (20s), T3220 (5s) or T3230 (10s) */
+			osmo_fsm_inst_state_chg(fi, ST_WAIT_CC, 20, 993210);
+		}
 		break;
 	case GSCON_EV_A_CONN_IND:
 		scu_prim = data;
@@ -425,6 +428,11 @@ static int gscon_timer_cb(struct osmo_fsm_inst *fi)
 	struct msgb *resp = NULL;
 
 	switch (fi->T) {
+	case 993210:
+		/* MSC has not responded/confirmed connection witH CC */
+		/* N-DISCONNET.req is sent in gscon_cleanup() above */
+		osmo_fsm_inst_term(fi, OSMO_FSM_TERM_REGULAR, NULL);
+		break;
 	case 10: /* Assignment Failed */
 		resp = gsm0808_create_assignment_failure(GSM0808_CAUSE_RADIO_INTERFACE_FAILURE, NULL);
 		osmo_bsc_sigtran_send(conn, resp);
