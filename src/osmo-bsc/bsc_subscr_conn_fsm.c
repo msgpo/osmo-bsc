@@ -356,6 +356,7 @@ static void gscon_fsm_allstate(struct osmo_fsm_inst *fi, uint32_t event, void *d
 	case GSCON_EV_RLL_REL_IND:
 		/* BTS reports that one of the LAPDm data links was released */
 		/* send proper clear request to MSC */
+		osmo_fsm_inst_term(fi, OSMO_FSM_TERM_REGULAR, NULL);
 		break;
 	case GSCON_EV_RSL_CONN_FAIL:
 		LOGPFSM(fi, "Tx BSSMAP CLEAR REQUEST to MSC");
