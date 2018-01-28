@@ -26,6 +26,7 @@ bin_PROGRAMS = \
 	$(NULL)
 
 osmo_bsc_SOURCES = \
+	bsc_subscr_conn_fsm.c \
 	osmo_bsc_main.c \
 	osmo_bsc_vty.c \
 	osmo_bsc_api.c \

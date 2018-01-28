@@ -29,6 +29,7 @@
 #include <osmocom/core/timer.h>
 #include <osmocom/core/fsm.h>
 #include <osmocom/bsc/osmo_bsc_sigtran.h>
+#include <osmocom/bsc/bsc_subscr_conn_fsm.h>
 #include <osmocom/core/byteswap.h>
 #include <arpa/inet.h>
 
@@ -278,12 +279,8 @@ static void fsm_proc_assignmnent_req_cb(struct osmo_fsm_inst *fi, uint32_t event
 	full_rate = mgcp_ctx->full_rate;
 
 	LOGPFSML(fi, LOGL_DEBUG, "MGW proceeding assignment request...\n");
-	rc = gsm0808_assign_req(conn, chan_mode, full_rate);
-
-	if (rc < 0) {
-		handle_error(mgcp_ctx, MGCP_ERR_ASSGMNT_FAIL);
-		return;
-	}
+	uint32_t param = (full_rate << 16) | chan_mode;
+	osmo_fsm_inst_dispatch(conn->fi, GSCON_EV_A_ASSIGNMENT_CMD, &param);
 
 	osmo_fsm_inst_state_chg(fi, ST_MDCX_BTS, MGCP_BSS_TIMEOUT, MGCP_BSS_TIMEOUT_TIMER_NR);
 }

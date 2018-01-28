@@ -17,6 +17,7 @@
  *
  */
 
+#include <osmocom/bsc/bsc_subscr_conn_fsm.h>
 #include <osmocom/bsc/osmo_bsc.h>
 #include <osmocom/bsc/bsc_msc_data.h>
 #include <osmocom/bsc/debug.h>
@@ -295,15 +296,11 @@ static int complete_layer3(struct gsm_subscriber_connection *conn,
 	resp = gsm0808_create_layer3(msg, network_code, country_code, lac, ci);
 	if (!resp) {
 		LOGP(DMSC, LOGL_DEBUG, "Failed to create layer3 message.\n");
-		osmo_bsc_sigtran_del_conn(conn);
+		//osmo_bsc_sigtran_del_conn(conn);
 		return BSC_API_CONN_POL_REJECT;
 	}
 
-	if (osmo_bsc_sigtran_open_conn(conn, resp) != 0) {
-		osmo_bsc_sigtran_del_conn(conn);
-		msgb_free(resp);
-		return BSC_API_CONN_POL_REJECT;
-	}
+	osmo_fsm_inst_dispatch(conn->fi, GSCON_EV_A_CONN_REQ, resp);
 
 	return BSC_API_CONN_POL_ACCEPT;
 }
@@ -328,7 +325,7 @@ static int move_to_msc(struct gsm_subscriber_connection *_conn,
 	 */
 	if (complete_layer3(_conn, msg, msc) != BSC_API_CONN_POL_ACCEPT) {
 		gsm0808_clear(_conn);
-		bsc_subscr_con_free(_conn);
+		//bsc_subscr_con_free(_conn);
 		return 1;
 	}
 
@@ -397,7 +394,6 @@ static int handle_cc_setup(struct gsm_subscriber_connection *conn,
 static void bsc_dtap(struct gsm_subscriber_connection *conn, uint8_t link_id, struct msgb *msg)
 {
 	int lu_cause;
-	struct msgb *resp;
 	return_when_not_connected(conn);
 
 	LOGP(DMSC, LOGL_INFO, "Tx MSC DTAP LINK_ID=0x%02x\n", link_id);
@@ -420,16 +416,21 @@ static void bsc_dtap(struct gsm_subscriber_connection *conn, uint8_t link_id, st
 
 	bsc_scan_bts_msg(conn, msg);
 
-	resp = gsm0808_create_dtap(msg, link_id);
-	queue_msg_or_return(resp);
+	/* Store link_id in msg->cb */
+	OBSC_LINKID_CB(msg) = link_id;
+	osmo_fsm_inst_dispatch(conn->fi, GSCON_EV_MO_DTAP, msg);
 }
 
 static void bsc_assign_compl(struct gsm_subscriber_connection *conn, uint8_t rr_cause,
 			     uint8_t chosen_channel, uint8_t encr_alg_id,
 			     uint8_t speech_model)
 {
-	struct msgb *resp;
 	return_when_not_connected(conn);
+
+	conn->lchan->abis_ip.ass_compl.rr_cause = rr_cause;
+	conn->lchan->abis_ip.ass_compl.chosen_channel = chosen_channel;
+	conn->lchan->abis_ip.ass_compl.encr_alg_id = encr_alg_id;
+	conn->lchan->abis_ip.ass_compl.speech_mode = speech_model;
 
 	if (is_ipaccess_bts(conn_get_bts(conn)) && conn->user_plane.rtp_ip) {
 		/* NOTE: In a network that makes use of an IPA base station
@@ -440,18 +441,12 @@ static void bsc_assign_compl(struct gsm_subscriber_connection *conn, uint8_t rr_
 		 * postpone the AoIP assignment completed message until we
 		 * know the RTP IP/Port combination. */
 		LOGP(DMSC, LOGL_INFO, "POSTPONE MSC ASSIGN COMPL\n");
-		conn->lchan->abis_ip.ass_compl.rr_cause = rr_cause;
-		conn->lchan->abis_ip.ass_compl.chosen_channel = chosen_channel;
-		conn->lchan->abis_ip.ass_compl.encr_alg_id = encr_alg_id;
-		conn->lchan->abis_ip.ass_compl.speech_mode = speech_model;
 		conn->lchan->abis_ip.ass_compl.valid = true;
 
 	} else {
 		/* NOTE: Send the A assignment complete message immediately. */
 		LOGP(DMSC, LOGL_INFO, "Tx MSC ASSIGN COMPL\n");
-		resp = gsm0808_create_assignment_completed(rr_cause, chosen_channel,
-							   encr_alg_id, speech_model);
-		queue_msg_or_return(resp);
+		osmo_fsm_inst_dispatch(conn->fi, GSCON_EV_RR_ASS_COMPL, NULL);
 	}
 }
 

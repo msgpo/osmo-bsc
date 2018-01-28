@@ -13,6 +13,7 @@
 #include <osmocom/core/stats.h>
 #include <osmocom/core/stat_item.h>
 #include <osmocom/gsm/protocol/gsm_08_08.h>
+#include <osmocom/core/fsm.h>
 
 #include <osmocom/crypt/auth.h>
 
@@ -92,6 +93,9 @@ enum subscr_sccp_state {
 struct gsm_subscriber_connection {
 	/* global linked list of subscriber_connections */
 	struct llist_head entry;
+
+	/* Finite State Machine */
+	struct osmo_fsm_inst *fi;
 
 	/* libbsc subscriber information (if available) */
 	struct bsc_subscr *bsub;
@@ -1359,8 +1363,7 @@ void gprs_ra_id_by_bts(struct gprs_ra_id *raid, struct gsm_bts *bts);
 int gsm_btsmodel_set_feature(struct gsm_bts_model *model, enum gsm_bts_features feat);
 int gsm_bts_model_register(struct gsm_bts_model *model);
 
-struct gsm_subscriber_connection *bsc_subscr_con_allocate(struct gsm_lchan *lchan);
-void bsc_subscr_con_free(struct gsm_subscriber_connection *conn);
+struct gsm_subscriber_connection *bsc_subscr_con_allocate(struct gsm_network *network);
 
 struct gsm_subscriber_connection *msc_subscr_con_allocate(struct gsm_network *network);
 void msc_subscr_con_free(struct gsm_subscriber_connection *conn);

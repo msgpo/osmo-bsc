@@ -1,6 +1,7 @@
 /* GSM 08.08 BSSMAP handling						*/
 /* (C) 2009-2012 by Holger Hans Peter Freyther <zecke@selfish.org>
  * (C) 2009-2012 by On-Waves
+ * (C) 2017 by Harald Welte <laforge@gnumonks.org>
  * All Rights Reserved
  *
  * This program is free software; you can redistribute it and/or modify
@@ -27,6 +28,7 @@
 #include <osmocom/bsc/osmo_bsc_mgcp.h>
 #include <osmocom/bsc/paging.h>
 #include <osmocom/bsc/gsm_04_08_utils.h>
+#include <osmocom/bsc/bsc_subscr_conn_fsm.h>
 
 #include <osmocom/gsm/protocol/gsm_08_08.h>
 #include <osmocom/gsm/gsm0808.h>
@@ -583,45 +585,6 @@ static int select_best_cipher(uint8_t msc_mask, uint8_t bsc_mask)
 }
 
 /*
- * GSM 08.08 § 3.1.9.1 and 3.2.1.21...
- * release our gsm_subscriber_connection and send message
- */
-static int bssmap_handle_clear_command(struct gsm_subscriber_connection *conn,
-				       struct msgb *msg, unsigned int payload_length)
-{
-	struct msgb *resp;
-
-	/* TODO: handle the cause of this package */
-
-	LOGP(DMSC, LOGL_INFO, "Releasing all transactions on %p\n", conn);
-	gsm0808_clear(conn);
-
-	/* generate the clear complete message */
-	resp = gsm0808_create_clear_complete();
-	if (!resp) {
-		LOGP(DMSC, LOGL_ERROR, "Sending clear complete failed.\n");
-		return -1;
-	}
-
-	if (conn->user_plane.mgcp_ctx) {
-		/* NOTE: This is the AoIP case, osmo-bsc has to negotiate with
-		 * the MGCP-GW. For this an mgcp_ctx should be created that
-		 * contains the FSM and some system data. When the connection
-		 * is removed from the MGCP-GW, then osmo_bsc_sigtran_send()
-		 * calls osmo_bsc_sigtran_send(). */
-	        mgcp_clear_complete(conn->user_plane.mgcp_ctx, resp);
-	} else {
-		/* NOTE: This is the SCCP-Lite case, since we do not handle
-		 * the MGCP-GW switching ourselves, we may skip everything
-		 * that is MGCP-GW related and sent the clear complete message
-		 * directly */
-		osmo_bsc_sigtran_send(conn, resp);
-	}
-
-	return 0;
-}
-
-/*
  * GSM 08.08 § 3.4.7 cipher mode handling. We will have to pick
  * the cipher to be used for this. In case we are already using
  * a cipher we will have to send cipher mode reject to the MSC,
@@ -886,7 +849,8 @@ static int bssmap_handle_assignm_req(struct gsm_subscriber_connection *conn,
 		 * to sccp-lite. */
 		conn->user_plane.rtp_port = mgcp_timeslot_to_port(multiplex, timeslot, msc->rtp_base);
 		conn->user_plane.rtp_ip = 0;
-		return gsm0808_assign_req(conn, chan_mode, full_rate);
+		uint32_t param = (full_rate << 16 | chan_mode);
+		return osmo_fsm_inst_dispatch(conn->fi, GSCON_EV_A_ASSIGNMENT_CMD, &param);
 	}
 
 reject:
@@ -944,7 +908,7 @@ static int bssmap_rcvmsg_dt1(struct gsm_subscriber_connection *conn,
 
 	switch (msg->l4h[0]) {
 	case BSS_MAP_MSG_CLEAR_CMD:
-		ret = bssmap_handle_clear_command(conn, msg, length);
+		osmo_fsm_inst_dispatch(conn->fi, GSCON_EV_A_CLEAR_CMD, msg);
 		break;
 	case BSS_MAP_MSG_CIPHER_MODE_CMD:
 		ret = bssmap_handle_cipher_mode(conn, msg, length);
@@ -1005,7 +969,9 @@ static int dtap_rcvmsg(struct gsm_subscriber_connection *conn,
 
 	/* pass it to the filter for extra actions */
 	rc = bsc_scan_msc_msg(conn, gsm48);
-	dtap_rc = gsm0808_submit_dtap(conn, gsm48, header->link_id, 1);
+	/* Store link_id in msgb->cb */
+	OBSC_LINKID_CB(msg) = header->link_id;
+	dtap_rc = osmo_fsm_inst_dispatch(conn->fi, GSCON_EV_MT_DTAP, gsm48);
 	if (rc == BSS_SEND_USSD)
 		bsc_send_welcome_ussd(conn);
 	return dtap_rc;
