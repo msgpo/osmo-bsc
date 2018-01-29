@@ -23,10 +23,13 @@ enum gscon_fsm_event {
 	GSCON_EV_RR_ASS_FAIL,
 	/* RR MODE MODIFY ACK received */
 	GSCON_EV_RR_MODE_MODIFY_ACK,
+
 	/* RR HO ACC (access burst on ext HO) */
-	GSCON_EV_RR_HO_ACC,
+	GSCON_EV_RR_HO_ACC,	/* NOT USED YET! */
 	/* RR HANDOVER COMPLETE received */
-	GSCON_EV_RR_HO_COMPL,
+	GSCON_EV_RR_HO_COMPL,	/* NOT USED YET! */
+	GSCON_EV_RR_HO_FAIL,	/* NOT USED YET! */
+
 	/* RSL RLL Release Indication */
 	GSCON_EV_RLL_REL_IND,
 	/* RSL CONNection FAILure Indication */
@@ -39,6 +42,29 @@ enum gscon_fsm_event {
 	GSCON_EV_MO_DTAP,
 	/* Mobile-terminated DTAP (from MSC) */
 	GSCON_EV_MT_DTAP,
+
+	/* Transmit custom SCCP message */
+	GSCON_EV_TX_SCCP,
+
+	/* MGW is indicating failure (BTS) */
+	GSCON_EV_MGW_FAIL_BTS,
+	/* MGW is indicating failure (MSC) */
+	GSCON_EV_MGW_FAIL_MSC,
+	/* CRCX response received (BTS) */
+	GSCON_EV_MGW_CRCX_RESP_BTS,
+	/* MDCX response received (BTS) */
+	GSCON_EV_MGW_MDCX_RESP_BTS,
+	/* CRCX response received (MSC) */
+	GSCON_EV_MGW_CRCX_RESP_MSC,
+
+	/* Internal handover request (intra-BSC handover) */
+	GSCON_EV_HO_START,
+	/* Handover timed out (T3103 in handover_logic.c) */
+	GSCON_EV_HO_TIMEOUT,
+	/* Handover failed (handover_logic.c) */
+	GSCON_EV_HO_FAIL,
+	/* Handover completed successfully (handover_logic.c) */
+	GSCON_EV_HO_COMPL,
 };
 
 struct gsm_subscriber_connection;

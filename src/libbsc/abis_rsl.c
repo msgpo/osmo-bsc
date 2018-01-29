@@ -2241,7 +2241,7 @@ static int abis_rsl_rx_rll(struct msgb *msg)
 				  BSC_RLLR_IND_REL_IND);
 		rsl_handle_release(msg->lchan);
 		/* if it was the main signalling link, let the subscr_conn_fsm know */
-		if (sapi == 0 && (rllh->link_id >> 6) == 0)
+		if (msg->lchan->conn && sapi == 0 && (rllh->link_id >> 6) == 0)
 			osmo_fsm_inst_dispatch(msg->lchan->conn->fi, GSCON_EV_RLL_REL_IND, msg);
 		break;
 	case RSL_MT_REL_CONF:

@@ -25,7 +25,6 @@
 #include <osmocom/bsc/bsc_msc_data.h>
 #include <osmocom/bsc/debug.h>
 #include <osmocom/bsc/bsc_subscriber.h>
-#include <osmocom/bsc/osmo_bsc_mgcp.h>
 #include <osmocom/bsc/paging.h>
 #include <osmocom/bsc/gsm_04_08_utils.h>
 #include <osmocom/bsc/bsc_subscr_conn_fsm.h>
@@ -679,7 +678,7 @@ reject:
 		return -1;
 	}
 
-	osmo_bsc_sigtran_send(conn, resp);
+	osmo_fsm_inst_dispatch(conn->fi, GSCON_EV_TX_SCCP, resp);
 	return -1;
 }
 
@@ -715,7 +714,6 @@ static int bssmap_handle_assignm_req(struct gsm_subscriber_connection *conn,
 	struct sockaddr_storage rtp_addr;
 	struct gsm0808_channel_type ct;
 	struct gsm0808_speech_codec_list *scl_ptr = NULL;
-	uint32_t param;
 	uint8_t cause;
 	int rc;
 
@@ -778,6 +776,18 @@ static int bssmap_handle_assignm_req(struct gsm_subscriber_connection *conn,
 			goto reject;
 		}
 
+		/* FIXME: At the moment osmo-bsc does not support any other
+		 * A-Interface other than AoIP. So we must reject all
+		 * assignment requests that are not AoIP compliant. However,
+		 * might support other A-Interface dialects lateron again,
+		 * thats why we preserve the logic around the AoIP detection
+		 * here. */
+		if (!aoip) {
+			LOGP(DMSC, LOGL_ERROR, "Requested A-Interface type is not supported! (AoIP only!)\n");
+			cause = GSM0808_CAUSE_REQ_A_IF_TYPE_NOT_SUPP;
+			goto reject;
+		}
+
 		/* Decode speech codec list (AoIP) */
 		conn->codec_list_present = false;
 		if (aoip) {
@@ -830,37 +840,21 @@ static int bssmap_handle_assignm_req(struct gsm_subscriber_connection *conn,
 			 * the network side RTP connection is made, as long it is made
 			 * before we return with the assignment complete message. */
 			memcpy(&conn->user_plane.aoip_rtp_addr_remote, &rtp_addr, sizeof(rtp_addr));
-
-			/* Create an assignment request using the MGCP fsm. This FSM
-			 * is directly started when its created (now) and will also
-			 * take care about the further processing (creating RTP
-			 * endpoints, calling gsm0808_assign_req(), responding to
-			 * the assignment request etc... */
-			conn->user_plane.mgcp_ctx = mgcp_assignm_req(msc->network,
-									msc->network->mgw.client,
-									conn, chan_mode, full_rate);
-			if (!conn->user_plane.mgcp_ctx) {
-				LOGP(DMSC, LOGL_ERROR, "MGCP / MGW failure, rejecting assignment... "
-					"(id=%i)\n", conn->sccp.conn_id);
-				cause = GSM0808_CAUSE_EQUIPMENT_FAILURE;
-				goto reject;
-			}
-
-			/* We now may return here, the FSM will do all further work */
-			return 0;
+		} else {
+			/* Note: In the sccp-lite case we to not perform any mgcp operation,
+			 * (the MSC does that for us). We set conn->rtp_ip to 0 and check
+			 * on this later. By this we know that we have to behave accordingly
+			 * to sccp-lite. */
+			conn->user_plane.rtp_port = mgcp_timeslot_to_port(multiplex, timeslot, msc->rtp_base);
+			conn->user_plane.rtp_ip = 0;
 		}
-		/* Note: In the sccp-lite case we to not perform any mgcp operation,
-		 * (the MSC does that for us). We set conn->rtp_ip to 0 and check
-		 * on this later. By this we know that we have to behave accordingly
-		 * to sccp-lite. */
-		conn->user_plane.rtp_port = mgcp_timeslot_to_port(multiplex, timeslot, msc->rtp_base);
-		conn->user_plane.rtp_ip = 0;
-		param = (full_rate << 16 | chan_mode);
-		osmo_fsm_inst_dispatch(conn->fi, GSCON_EV_A_ASSIGNMENT_CMD, &param);
+		conn->user_plane.chan_mode = chan_mode;
+		conn->user_plane.full_rate = full_rate;
+		osmo_fsm_inst_dispatch(conn->fi, GSCON_EV_A_ASSIGNMENT_CMD, NULL);
 		break;
 	case GSM0808_CHAN_SIGN:
-		param = GSM48_CMODE_SIGN;
-		osmo_fsm_inst_dispatch(conn->fi, GSCON_EV_A_ASSIGNMENT_CMD, &param);
+		conn->user_plane.chan_mode = GSM48_CMODE_SIGN;
+		osmo_fsm_inst_dispatch(conn->fi, GSCON_EV_A_ASSIGNMENT_CMD, NULL);
 		break;
 	default:
 		cause = GSM0808_CAUSE_INVALID_MESSAGE_CONTENTS;
@@ -872,7 +866,7 @@ reject:
 	resp = gsm0808_create_assignment_failure(cause, NULL);
 	OSMO_ASSERT(resp);
 
-	osmo_bsc_sigtran_send(conn, resp);
+	osmo_fsm_inst_dispatch(conn->fi, GSCON_EV_TX_SCCP, resp);
 	return -1;
 }
 
@@ -1043,39 +1037,4 @@ int bsc_handle_dt(struct gsm_subscriber_connection *conn,
 	}
 
 	return -1;
-}
-
-/* Generate and send assignment complete message */
-int bssmap_send_aoip_ass_compl(struct gsm_lchan *lchan)
-{
-	struct msgb *resp;
-	struct gsm0808_speech_codec sc;
-	struct gsm_subscriber_connection *conn;
-
-	conn = lchan->conn;
-
-	OSMO_ASSERT(lchan->abis_ip.ass_compl.valid);
-	OSMO_ASSERT(conn);
-
-	LOGP(DMSC, LOGL_DEBUG, "Sending assignment complete message... (id=%i)\n", conn->sccp.conn_id);
-
-	/* Extrapolate speech codec from speech mode */
-	gsm0808_speech_codec_from_chan_type(&sc, lchan->abis_ip.ass_compl.speech_mode);
-
-	/* Generate message */
-	resp = gsm0808_create_ass_compl(lchan->abis_ip.ass_compl.rr_cause,
-					lchan->abis_ip.ass_compl.chosen_channel,
-					lchan->abis_ip.ass_compl.encr_alg_id,
-					lchan->abis_ip.ass_compl.speech_mode,
-					&conn->user_plane.aoip_rtp_addr_local,
-					&sc,
-					NULL);
-
-	if (!resp) {
-		LOGP(DMSC, LOGL_ERROR, "Failed to generate assignment completed message! (id=%i)\n",
-		     conn->sccp.conn_id);
-		return -EINVAL;
-	}
-
-	return osmo_bsc_sigtran_send(conn, resp);
 }

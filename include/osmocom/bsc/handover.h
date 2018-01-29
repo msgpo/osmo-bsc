@@ -53,6 +53,8 @@ struct bsc_handover {
 
 int bsc_handover_start(enum hodec_id from_hodec_id, struct gsm_lchan *old_lchan, struct gsm_bts *new_bts,
 		       enum gsm_chan_t new_lchan_type);
+int bsc_handover_start_gscon(struct gsm_lchan *old_lchan, struct gsm_bts *new_bts,
+			     enum gsm_chan_t new_lchan_typ);
 void bsc_clear_handover(struct gsm_subscriber_connection *conn, int free_lchan);
 struct gsm_lchan *bsc_handover_pending(struct gsm_lchan *new_lchan);
 

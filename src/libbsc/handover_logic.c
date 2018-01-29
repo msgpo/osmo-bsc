@@ -40,6 +40,7 @@
 #include <osmocom/bsc/gsm_04_08_utils.h>
 #include <osmocom/bsc/handover.h>
 #include <osmocom/bsc/handover_cfg.h>
+#include <osmocom/bsc/bsc_subscr_conn_fsm.h>
 
 static LLIST_HEAD(bsc_handovers);
 static LLIST_HEAD(handover_decision_callbacks);
@@ -80,6 +81,39 @@ static struct bsc_handover *bsc_ho_by_old_lchan(struct gsm_lchan *old_lchan)
  * HO to a specific BTS. To not change the lchan type, pass old_lchan->type. */
 int bsc_handover_start(enum hodec_id from_hodec_id, struct gsm_lchan *old_lchan, struct gsm_bts *new_bts,
 		       enum gsm_chan_t new_lchan_type)
+{
+	/*! Note: Due to architectural changes this function now acts as a
+	 *  wrapper function that dispatches a signal to the GSCON FSM,
+	 *  which then calls bsc_handover_start_fsm() in case handover is
+	 *  actually permitted. The FSM will then supervise the handover
+	 *  process and (if necessary) communicate changes of IP-Addresses
+	 *  back to the MGW.
+	 * 
+	 *  The implementation of a wrapper function had been prefered over
+	 *  API changes in order to keep code that makes use of
+	 *  bsc_handover_start() unchanged */
+	
+	struct gsm_subscriber_connection *conn;
+
+	OSMO_ASSERT(old_lchan);
+	OSMO_ASSERT(new_bts);	
+
+	conn = old_lchan->conn;
+	OSMO_ASSERT(conn);
+
+	conn->user_plane.ho_from_hodec_id = from_hodec_id;
+	conn->user_plane.ho_old_lchan = old_lchan;
+	conn->user_plane.ho_new_bts = new_bts;
+	conn->user_plane.ho_new_lchan_type = new_lchan_type;
+
+	return osmo_fsm_inst_dispatch(conn->fi, GSCON_EV_HO_START, NULL);
+}
+
+/*! \brief Actual implementation of bsc_handover_start(). This function must
+ *  not be called directly. The only legal caller is the GSCON FSM in
+ *  bsc_subscr_conn_fsm.c. */
+int bsc_handover_start_gscon(struct gsm_lchan *old_lchan, struct gsm_bts *new_bts,
+			     enum gsm_chan_t new_lchan_type)
 {
 	struct gsm_network *network;
 	struct gsm_lchan *new_lchan;
@@ -211,6 +245,9 @@ static void ho_T3103_cb(void *_ho)
 	DEBUGP(DHO, "HO T3103 expired\n");
 	rate_ctr_inc(&net->bsc_ctrs->ctr[BSC_CTR_HANDOVER_TIMEOUT]);
 
+	/* Inform the GSCON FSM about the timed out handover */
+	osmo_fsm_inst_dispatch(ho->old_lchan->conn->fi, GSCON_EV_HO_TIMEOUT, NULL);
+
 	ho->new_lchan->conn->ho_lchan = NULL;
 	ho->new_lchan->conn = NULL;
 	lchan_release(ho->new_lchan, 0, RSL_REL_LOCAL_END);
@@ -306,6 +343,9 @@ static int ho_gsm48_ho_compl(struct gsm_lchan *new_lchan)
 	lchan_release(ho->old_lchan, 0, RSL_REL_LOCAL_END);
 
 	handover_free(ho);
+
+	/* Inform the GSCON FSM that the handover is complete */
+	osmo_fsm_inst_dispatch(new_lchan->conn->fi, GSCON_EV_HO_COMPL, NULL);
 	return 0;
 }
 
@@ -338,7 +378,8 @@ static int ho_gsm48_ho_fail(struct gsm_lchan *old_lchan)
 
 	lchan_release(new_lchan, 0, RSL_REL_LOCAL_END);
 
-
+	/* Inform the GSCON FSM that the handover failed */
+	osmo_fsm_inst_dispatch(old_lchan->conn->fi, GSCON_EV_HO_FAIL, NULL);
 	return 0;
 }
 

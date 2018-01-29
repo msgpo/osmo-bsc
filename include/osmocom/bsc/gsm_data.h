@@ -94,7 +94,7 @@ struct gsm_subscriber_connection {
 	/* global linked list of subscriber_connections */
 	struct llist_head entry;
 
-	/* Finite State Machine */
+	/* FSM instance to control the subscriber connection state (RTP, A) */
 	struct osmo_fsm_inst *fi;
 
 	/* libbsc subscriber information (if available) */
@@ -168,11 +168,30 @@ struct gsm_subscriber_connection {
 		 * assignment complete message) */
 		struct sockaddr_storage aoip_rtp_addr_local;
 
-		/* storage to keep states of the MGCP connection handler, the
-		* handler is created when an assignment request is received
-		* and is terminated when the assignment complete message is
-		* sent */
-		struct mgcp_ctx *mgcp_ctx;
+		/* FSM instance to control the BTS sided RTP connection */
+		struct osmo_fsm_inst *fi_bts;
+
+		/* FSM instance to control the MSC sided RTP connection */
+		struct osmo_fsm_inst *fi_msc;
+
+		/* Endpoint identifier of the MGCP endpoint the connection uses */
+		char *mgw_endpoint;
+
+		/* Channel rate flag, FR=1, HR=0, Invalid=-1 */
+		int full_rate;
+
+		/* Channel mode flage (signaling or voice channel) */
+		enum gsm48_chan_mode chan_mode;
+
+		/* FIXME: These members are for caching the handover
+		 * information when the FSM gets the handover start
+		 * signal. This is probably misplaced and should
+		 * be its own struct. (see also handover_logic.c) */
+		enum hodec_id from_hodec_id;
+		struct gsm_lchan *ho_old_lchan;
+		struct gsm_bts *ho_new_bts;
+		enum gsm_chan_t ho_new_lchan_type;
+		
 	} user_plane;
 };
 
