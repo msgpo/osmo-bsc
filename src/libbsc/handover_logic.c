@@ -158,7 +158,9 @@ int bsc_handover_start(enum hodec_id from_hodec_id, struct gsm_lchan *old_lchan,
 	new_lchan->conn->ho_lchan = new_lchan;
 
 	rc = rsl_chan_activate_lchan(new_lchan,
-				     ho->async ? RSL_ACT_INTER_ASYNC : RSL_ACT_INTER_SYNC,
+				     ho->inter_cell
+				       ? (ho->async ? RSL_ACT_INTER_ASYNC : RSL_ACT_INTER_SYNC)
+				       : RSL_ACT_INTRA_IMM_ASS,
 				     ho->ho_ref);
 	if (rc < 0) {
 		LOGPHO(ho, LOGL_INFO, "%s Failure: activate lchan rc = %d\n",
@@ -233,7 +235,10 @@ static int ho_chan_activ_ack(struct gsm_lchan *new_lchan)
 	/* we can now send the 04.08 HANDOVER COMMAND to the MS
 	 * using the old lchan */
 
-	gsm48_send_ho_cmd(ho->old_lchan, new_lchan, new_lchan->ms_power, ho->ho_ref);
+	if (ho->inter_cell)
+		gsm48_send_ho_cmd(ho->old_lchan, new_lchan, new_lchan->ms_power, ho->ho_ref);
+	else
+		gsm48_send_rr_ass_cmd(ho->old_lchan, new_lchan, new_lchan->ms_power);
 
 	/* start T3103.  We can continue either with T3103 expiration,
 	 * 04.08 HANDOVER COMPLETE or 04.08 HANDOVER FAIL */
