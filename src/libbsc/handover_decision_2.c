@@ -1149,7 +1149,7 @@ static void on_measurement_report(struct gsm_meas_rep *mr)
 		LOGPHOLCHAN(lchan, LOGL_INFO, "Skipping, Initial Assignment is still ongoing\n");
 		return;
 	}
-	if (lchan->conn->ho_lchan) {
+	if (lchan->conn->ho) {
 		LOGPHOLCHAN(lchan, LOGL_INFO, "Skipping, Handover already triggered\n");
 		return;
 	}
@@ -1348,7 +1348,7 @@ static int bts_resolve_congestion(struct gsm_bts *bts, int tchf_congestion, int 
 					break;
 				/* omit if there is an ongoing ho/as */
 				if (!lc->conn || lc->conn->secondary_lchan
-				    || lc->conn->ho_lchan)
+				    || lc->conn->ho)
 					break;
 				/* We desperately want to resolve congestion, ignore rxlev when
 				 * collecting candidates by passing include_weaker_rxlev=true. */
@@ -1364,7 +1364,7 @@ static int bts_resolve_congestion(struct gsm_bts *bts, int tchf_congestion, int 
 					/* omit of there is an ongoing ho/as */
 					if (!lc->conn
 					    || lc->conn->secondary_lchan
-					    || lc->conn->ho_lchan)
+					    || lc->conn->ho)
 						continue;
 					/* We desperately want to resolve congestion, ignore rxlev when
 					 * collecting candidates by passing include_weaker_rxlev=true. */

@@ -267,7 +267,7 @@ void ho_dtap_cache_flush(struct gsm_subscriber_connection *conn, int send)
 	struct msgb *msg;
 	unsigned int flushed_count = 0;
 
-	if (conn->secondary_lchan || conn->ho_lchan) {
+	if (conn->secondary_lchan || conn->ho) {
 		LOGP(DHO, LOGL_ERROR, "%s: Cannot send cached DTAP messages, handover/assignment is still ongoing\n",
 		     bsc_subscr_name(conn->bsub));
 		send = 0;
@@ -308,7 +308,7 @@ int gsm0808_submit_dtap(struct gsm_subscriber_connection *conn,
 	}
 
 	/* buffer message during assignment / handover */
-	if (conn->secondary_lchan || conn->ho_lchan) {
+	if (conn->secondary_lchan || conn->ho) {
 		ho_dtap_cache_add(conn, msg, link_id, !! allow_sacch);
 		return 0;
 	}
@@ -427,7 +427,7 @@ static void handle_ass_compl(struct gsm_subscriber_connection *conn,
 	struct gsm48_hdr *gh;
 	struct bsc_api *api = conn->network->bsc_api;
 
-	if (conn->ho_lchan) {
+	if (conn->ho) {
 		struct lchan_signal_data sig;
 		struct gsm48_hdr *gh = msgb_l3(msg);
 
@@ -483,7 +483,7 @@ static void handle_ass_fail(struct gsm_subscriber_connection *conn,
 	uint8_t *rr_failure;
 	struct gsm48_hdr *gh;
 
-	if (conn->ho_lchan) {
+	if (conn->ho) {
 		struct lchan_signal_data sig;
 		struct gsm48_hdr *gh = msgb_l3(msg);
 
@@ -772,7 +772,7 @@ int gsm0808_cipher_mode(struct gsm_subscriber_connection *conn, int cipher,
  */
 int gsm0808_clear(struct gsm_subscriber_connection *conn)
 {
-	if (conn->ho_lchan)
+	if (conn->ho)
 		bsc_clear_handover(conn, 1);
 
 	if (conn->secondary_lchan)
@@ -783,7 +783,6 @@ int gsm0808_clear(struct gsm_subscriber_connection *conn)
 
 	conn->lchan = NULL;
 	conn->secondary_lchan = NULL;
-	conn->ho_lchan = NULL;
 
 	osmo_timer_del(&conn->T10);
 
@@ -885,10 +884,8 @@ static void handle_release(struct gsm_subscriber_connection *conn,
 	/* now give up all channels */
 	if (conn->lchan == lchan)
 		conn->lchan = NULL;
-	if (conn->ho_lchan == lchan) {
+	if (conn->ho && conn->ho->new_lchan == lchan)
 		bsc_clear_handover(conn, 0);
-		conn->ho_lchan = NULL;
-	}
 	lchan->conn = NULL;
 }
 

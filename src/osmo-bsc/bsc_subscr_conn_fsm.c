@@ -31,6 +31,7 @@
 #include <osmocom/bsc/osmo_bsc_sigtran.h>
 #include <osmocom/bsc/bsc_subscr_conn_fsm.h>
 #include <osmocom/bsc/osmo_bsc.h>
+#include <osmocom/bsc/penalty_timers.h>
 #include <osmocom/mgcp_client/mgcp_client_fsm.h>
 #include <osmocom/core/byteswap.h>
 
@@ -373,8 +374,7 @@ static void gscon_fsm_active(struct osmo_fsm_inst *fi, uint32_t event, void *dat
 		}
 		break;
 	case GSCON_EV_HO_START:
-		rc = bsc_handover_start_gscon(conn->user_plane.ho_old_lchan, conn->user_plane.ho_new_bts,
-					      conn->user_plane.ho_new_lchan_type);
+		rc = bsc_handover_start_gscon(conn);
 		if (rc) {
 			resp = gsm0808_create_clear_rqst(GSM0808_CAUSE_EQUIPMENT_FAILURE);
 			sigtran_send(conn, resp, fi);
@@ -928,10 +928,10 @@ static void gscon_cleanup(struct osmo_fsm_inst *fi, enum osmo_fsm_term_cause cau
 {
 	struct gsm_subscriber_connection *conn = fi->priv;
 
-	if (conn->ho_lchan) {
-		LOGPFSML(fi, LOGL_DEBUG, "Releasing ho_lchan\n");
+	if (conn->ho) {
+		LOGPFSML(fi, LOGL_DEBUG, "Releasing handover state\n");
 		bsc_clear_handover(conn, 1);
-		conn->ho_lchan = NULL;
+		conn->ho = NULL;
 	}
 
 	if (conn->secondary_lchan) {

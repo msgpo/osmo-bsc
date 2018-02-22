@@ -30,6 +30,7 @@
 #include <osmocom/gsm/gsm0808_utils.h>
 #include <osmocom/bsc/osmo_bsc_sigtran.h>
 #include <osmocom/bsc/bsc_subscr_conn_fsm.h>
+#include <osmocom/bsc/bsc_subscriber.h>
 
 #include <arpa/inet.h>
 
@@ -71,9 +72,8 @@ static int handle_abisip_signal(unsigned int subsys, unsigned int signal,
 		break;
 
 	case S_ABISIP_MDCX_ACK:
-		if (con->ho_lchan) {
-			LOGP(DHO, LOGL_DEBUG, "%s -> %s BTS sent MDCX ACK\n", gsm_lchan_name(lchan),
-			     gsm_lchan_name(con->ho_lchan));
+		if (con->ho) {
+			LOGPHO(con->ho, LOGL_DEBUG, "BTS sent MDCX ACK\n");
 			/* No need to do anything for handover here. As soon as a HANDOVER DETECT
 			 * happens, osmo_bsc_mgcp.c will trigger the MGCP MDCX towards MGW by
 			 * receiving an S_LCHAN_HANDOVER_DETECT signal. 

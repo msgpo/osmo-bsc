@@ -18,6 +18,7 @@
 #include <osmocom/crypt/auth.h>
 
 #include <osmocom/bsc/rest_octets.h>
+#include <osmocom/bsc/handover.h>
 
 #include <osmocom/core/bitvec.h>
 #include <osmocom/gsm/gsm_utils.h>
@@ -105,8 +106,9 @@ struct gsm_subscriber_connection {
 
 	/* the primary / currently active lchan to the BTS/subscriber */
 	struct gsm_lchan *lchan;
-	/* the future/allocated but not yet used lchan during HANDOVER */
-	struct gsm_lchan *ho_lchan;
+
+	/* handover information, if a handover is pending for this conn. */
+	struct bsc_handover *ho;
 
 	/* timer for assignment handling */
 	struct osmo_timer_list T10;
