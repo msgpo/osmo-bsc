@@ -90,7 +90,7 @@ enum gscon_fsm_states {
 static const struct value_string gscon_fsm_event_names[] = {
 	{GSCON_EV_A_CONN_IND, "MT-CONNECT.ind"},
 	{GSCON_EV_A_CONN_REQ, "MO-CONNECT.req"},
-	{GSCON_EV_A_CONN_CFM, "MO-CONNET.cfm"},
+	{GSCON_EV_A_CONN_CFM, "MO-CONNECT.cfm"},
 	{GSCON_EV_A_ASSIGNMENT_CMD, "ASSIGNMENT_CMD"},
 	{GSCON_EV_A_CLEAR_CMD, "CLEAR_CMD"},
 	{GSCON_EV_A_DISC_IND, "DISCONNET.ind"},
@@ -255,7 +255,7 @@ static void gscon_fsm_init(struct osmo_fsm_inst *fi, uint32_t event, void *data)
 	case GSCON_EV_A_CONN_IND:
 		scu_prim = data;
 		if (!conn->sccp.msc) {
-			LOGPFSML(fi, LOGL_NOTICE, "N-CONNET.ind from unknown MSC %s\n",
+			LOGPFSML(fi, LOGL_NOTICE, "N-CONNECT.ind from unknown MSC %s\n",
 				 osmo_sccp_addr_dump(&scu_prim->u.connect.calling_addr));
 			osmo_sccp_tx_disconn(conn->sccp.msc->a.sccp_user, scu_prim->u.connect.conn_id,
 					     &scu_prim->u.connect.called_addr, 0);
