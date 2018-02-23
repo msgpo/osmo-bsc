@@ -186,7 +186,8 @@ static struct gsm_bts *create_bts(int arfcn)
 
 void create_conn(struct gsm_lchan *lchan)
 {
-	lchan->conn = bsc_subscr_con_allocate(lchan);
+	lchan->conn = bsc_subscr_con_allocate(lchan->ts->trx->bts->network);
+	lchan->conn->lchan = lchan;
 }
 
 /* create lchan */
@@ -1592,7 +1593,7 @@ int main(int argc, char **argv)
 		struct gsm_subscriber_connection *conn = lchan[i]->conn;
 		lchan[i]->conn = NULL;
 		conn->lchan = NULL;
-		bsc_subscr_con_free(conn);
+		osmo_fsm_inst_term(conn->fi, OSMO_FSM_TERM_REGULAR, NULL);
 		lchan_free(lchan[i]);
 	}
 
