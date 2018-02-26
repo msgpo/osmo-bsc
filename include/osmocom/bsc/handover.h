@@ -10,6 +10,8 @@ struct gsm_lchan;
 struct gsm_bts;
 struct gsm_subscriber_connection;
 struct gsm_meas_rep mr;
+struct gsm0808_cell_id_list2;
+struct gsm0808_handover_required;
 
 #define LOGPHOLCHANTOLCHAN(old_lchan, new_lchan, level, fmt, args...) \
 	LOGP(DHODEC, level, "(BTS %u trx %u arfcn %u ts %u lchan %u %s)->(BTS %u trx %u arfcn %u ts %u lchan %u %s) (subscr %s) " fmt, \
@@ -93,3 +95,9 @@ struct handover_decision_callbacks {
 
 void handover_decision_callbacks_register(struct handover_decision_callbacks *hdc);
 struct handover_decision_callbacks *handover_decision_callbacks_get(int hodec_id);
+
+int bsc_handover_inter_bsc_start(enum hodec_id from_hodec_id, struct gsm_lchan *old_lchan,
+				 struct gsm0808_cell_id_list2 *target_cells,
+				 enum gsm_chan_t new_lchan_type);
+int bsc_send_handover_required(struct gsm_lchan *lchan,
+			       const struct gsm0808_handover_required *params);

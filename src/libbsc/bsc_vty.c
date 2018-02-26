@@ -33,6 +33,7 @@
 #include <osmocom/gsm/gsm0502.h>
 #include <osmocom/ctrl/control_if.h>
 #include <osmocom/gsm/gsm48.h>
+#include <osmocom/gsm/gsm0808.h>
 
 #include <arpa/inet.h>
 
@@ -1612,6 +1613,8 @@ static int ho_or_as(struct vty *vty, const char *argv[], int argc)
 
 #define MANUAL_HANDOVER_STR "Manually trigger handover (for debugging)\n"
 #define MANUAL_ASSIGNMENT_STR "Manually trigger assignment (for debugging)\n"
+#define HANDOVER_EXTERNAL_STR \
+	"Inter-BSC Handover, i.e. signal the MSC to perform handover to a cell not connected to this BSC.\n"
 
 DEFUN(handover_subscr_conn,
       handover_subscr_conn_cmd,
@@ -1754,6 +1757,61 @@ DEFUN(assignment_any, assignment_any_cmd,
 		return CMD_WARNING;
 
 	return trigger_ho_or_as(vty, from_lchan, NULL);
+}
+
+#if 0
+
+DEFUN(handover_ext_cgi,
+      handover_ext_cgi_cmd,
+      "handover external (cgi|lac+ci|ci|lai|lac|all|none) [VAL1] [VAL2] [VAL3] [VAL4]",
+      MANUAL_HANDOVER_EXTERNAL_STR
+      "Identify handover target cell by Cell Global Identifier; supply MCC MNC LAC CI arguments\n"
+      "Identify handover target cell by Location Area Code and Cell Identify\n"
+      "Identify handover target cell by Cell Identify\n"
+      "Identify handover target cell by Location Area Identifcation\n"
+      "Identify handover target cell by Location Area Code\n"
+      "Identify handover target as all and any available cell\n"
+      "Do not associate a cell with the Handover Required message\n"
+      "Value to specify target cell, format depends\n"
+      "Value to specify target cell, format depends\n"
+      "Value to specify target cell, format depends\n"
+      "Value to specify target cell, format depends\n")
+{
+	return ho_or_as(vty, argv, argc);
+}
+#endif
+
+DEFUN(handover_any_ext_lac,
+      handover_any_ext_lac_cmd,
+      "handover external any to lac <0-65535> [<0-65535>] [<0-65535>]",
+      MANUAL_HANDOVER_STR
+      HANDOVER_EXTERNAL_STR
+      "Pick any actively used TCH/F or TCH/H lchan to handover to external cell."
+      " This is likely to fail outside of a lab setup where you are certain that"
+      " all MS are able to see all external cells.\n"
+      "'to'\n"
+      "Identify handover target cell by LAC\n"
+      "Location Area Code\n"
+      "Location Area Code (second entry in Cell Identifier List)\n"
+      "Location Area Code (third entry in Cell Identifier List)\n")
+{
+	struct gsm_lchan *from_lchan;
+	struct gsm0808_cell_id_list2 cil = {
+		.id_discr = CELL_IDENT_LAC,
+		.id_list_len = argc,
+	};
+	int i;
+
+	from_lchan = find_used_voice_lchan(vty);
+	if (!from_lchan)
+		return CMD_WARNING;
+
+	for (i = 0; i < argc; i++)
+		cil.id_list[i].lac = atoi(argv[i]);
+
+	bsc_handover_inter_bsc_start(HODEC_NONE, from_lchan, &cil, from_lchan->type);
+
+	return CMD_WARNING;
 }
 
 static void paging_dump_vty(struct vty *vty, struct gsm_paging_request *pag)
@@ -4797,11 +4855,13 @@ int bsc_vty_init(struct gsm_network *network)
 	install_element_ve(&show_lchan_summary_cmd);
 
 	install_element_ve(&show_subscr_conn_cmd);
-	install_element_ve(&handover_any_cmd);
-	install_element_ve(&assignment_any_cmd);
 
 	install_element_ve(&show_paging_cmd);
 	install_element_ve(&show_paging_group_cmd);
+
+	install_element(ENABLE_NODE, &handover_any_cmd);
+	install_element(ENABLE_NODE, &assignment_any_cmd);
+	install_element(ENABLE_NODE, &handover_any_ext_lac_cmd);
 
 	logging_vty_add_cmds(NULL);
 	osmo_talloc_vty_add_cmds();

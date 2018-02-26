@@ -41,6 +41,7 @@
 #include <osmocom/bsc/handover.h>
 #include <osmocom/bsc/handover_cfg.h>
 #include <osmocom/bsc/bsc_subscr_conn_fsm.h>
+#include <osmocom/gsm/gsm0808.h>
 
 static LLIST_HEAD(bsc_handovers);
 static LLIST_HEAD(handover_decision_callbacks);

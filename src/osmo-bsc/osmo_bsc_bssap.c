@@ -990,3 +990,96 @@ int bsc_handle_dt(struct gsm_subscriber_connection *conn,
 
 	return -1;
 }
+
+static uint8_t gsm0808_current_channel_type_1(enum gsm_chan_t type)
+{
+	switch (type) {
+	default:
+		return 0;
+	case GSM_LCHAN_SDCCH:
+		return 0x01;
+	case GSM_LCHAN_TCH_F:
+		return 0x18;
+	case GSM_LCHAN_TCH_H:
+		return 0x19;
+	}
+}
+
+static enum gsm0808_permitted_speech chan_to_perm_speech(enum gsm_chan_t type, enum gsm48_chan_mode mode)
+{
+	switch (mode) {
+	case GSM48_CMODE_SPEECH_V1:
+		switch (type) {
+		case GSM_LCHAN_TCH_F:
+			return GSM0808_PERM_FR1;
+		case GSM_LCHAN_TCH_H:
+			return GSM0808_PERM_HR1;
+		default:
+			return 0;
+		}
+	case GSM48_CMODE_SPEECH_EFR:
+		switch (type) {
+		case GSM_LCHAN_TCH_F:
+			return GSM0808_PERM_FR2;
+		case GSM_LCHAN_TCH_H:
+			return GSM0808_PERM_HR2;
+		default:
+			return 0;
+		}
+	case GSM48_CMODE_SPEECH_AMR:
+		switch (type) {
+		case GSM_LCHAN_TCH_F:
+			return GSM0808_PERM_HR3;
+		case GSM_LCHAN_TCH_H:
+			return GSM0808_PERM_HR3;
+		default:
+			return 0;
+		}
+	default:
+		return 0;
+	}
+}
+
+int bsc_handover_inter_bsc_start(enum hodec_id from_hodec_id, struct gsm_lchan *old_lchan,
+				 struct gsm0808_cell_id_list2 *target_cells,
+				 enum gsm_chan_t new_lchan_type)
+{
+	struct gsm0808_handover_required params = {
+		.cause = GSM0808_CAUSE_BETTER_CELL,
+		.cil = *target_cells,
+		.current_channel_type_1_present = true,
+		.current_channel_type_1 = gsm0808_current_channel_type_1(old_lchan->type),
+	};
+
+	LOGP(DHO, LOGL_DEBUG, "%s Starting Inter-BSC Handover (from_hodec_id=%d)\n",
+	     gsm_lchan_name(old_lchan), from_hodec_id);
+
+	switch (old_lchan->type) {
+	case GSM_LCHAN_TCH_F:
+	case GSM_LCHAN_TCH_H:
+		params.speech_version_used_present = true;
+		params.speech_version_used = chan_to_perm_speech(old_lchan->type, old_lchan->tch_mode);
+		if (!params.speech_version_used) {
+			LOGP(DHO, LOGL_ERROR,
+			     "%s Cannot encode Speech Version (Used) for HANDOVER REQUIRED message\n",
+			     gsm_lchant_name(old_lchan->type));
+			return -EINVAL;
+		}
+		break;
+	default:
+		break;
+	}
+
+	return bsc_send_handover_required(old_lchan, &params);
+}
+
+int bsc_send_handover_required(struct gsm_lchan *lchan, const struct gsm0808_handover_required *params)
+{
+	struct msgb *msg;
+
+	msg = gsm0808_create_handover_required(params);
+	if (!msg)
+		return -ENOMEM;
+
+	return osmo_bsc_sigtran_send(lchan->conn, msg);
+}
