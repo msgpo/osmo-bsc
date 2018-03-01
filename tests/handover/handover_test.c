@@ -1616,3 +1616,5 @@ void trau_mux_unmap() {}
 void trau_mux_map_lchan() {}
 void trau_recv_lchan() {}
 void trau_send_frame() {}
+int osmo_bsc_sigtran_send(struct gsm_subscriber_connection *conn, struct msgb *msg) { return 0; }
+int osmo_bsc_sigtran_open_conn(struct gsm_subscriber_connection *conn, struct msgb *msg) { return 0; }
