@@ -707,7 +707,7 @@ static void gscon_fsm_wait_ho_compl(struct osmo_fsm_inst *fi, uint32_t event, vo
 		conn_peer.port = lchan->abis_ip.bound_port;
 
 		/* (Pre)Change state and modify the connection */
-		osmo_fsm_inst_state_chg(fi, ST_WAIT_MDCX_BTS_HO, MGCP_MGW_TIMEOUT, MGCP_MGW_TIMEOUT_TIMER_NR);
+		osmo_fsm_inst_state_chg(fi, ST_WAIT_MDCX_BTS_HO, MGCP_MGW_TIMEOUT, MGCP_MGW_HO_TIMEOUT_TIMER_NR);
 		rc = mgcp_conn_modify(conn->user_plane.fi_bts, GSCON_EV_MGW_MDCX_RESP_BTS, &conn_peer);
 		if (rc != 0) {
 			resp = gsm0808_create_clear_rqst(GSM0808_CAUSE_EQUIPMENT_FAILURE);
@@ -716,10 +716,6 @@ static void gscon_fsm_wait_ho_compl(struct osmo_fsm_inst *fi, uint32_t event, vo
 			return;
 		}
 		break;
-
-		osmo_fsm_inst_state_chg(fi, ST_WAIT_MT_HO_COMPL, MGCP_MGW_HO_TIMEOUT, MGCP_MGW_HO_TIMEOUT_TIMER_NR);
-		break;
-
 	case GSCON_EV_HO_TIMEOUT:
 	case GSCON_EV_HO_FAIL:
 		/* The handover logic informs us that the handover failed for
