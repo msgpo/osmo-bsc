@@ -284,6 +284,7 @@ int main(int argc, char **argv)
 	talloc_free(trx);
 	talloc_report_full(ctx, stderr);
 	OSMO_ASSERT(talloc_total_blocks(ctx) == 1);
+	talloc_free(ctx);
 	return 0;
 }
 

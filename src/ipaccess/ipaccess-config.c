@@ -861,7 +861,7 @@ int main(int argc, char **argv)
 	tall_ctx_config = talloc_named_const(NULL, 0, "ipaccess-config");
 	msgb_talloc_ctx_init(tall_ctx_config, 0);
 
-	osmo_init_logging(&log_info);
+	osmo_init_logging2(&log_info, tall_ctx_config);
 	log_parse_category_mask(osmo_stderr_target, "DNM,0");
 	bts_model_nanobts_init();
 
