@@ -39,6 +39,7 @@
 #include <osmocom/bsc/bss.h>
 #include <osmocom/bsc/bsc_api.h>
 #include <osmocom/bsc/osmo_bsc.h>
+#include <osmocom/bsc/bsc_subscr_conn_fsm.h>
 
 struct gsm_network *bsc_gsmnet;
 
@@ -186,8 +187,13 @@ static struct gsm_bts *create_bts(int arfcn)
 
 void create_conn(struct gsm_lchan *lchan)
 {
-	lchan->conn = bsc_subscr_con_allocate(lchan->ts->trx->bts->network);
-	lchan->conn->lchan = lchan;
+	struct gsm_subscriber_connection *conn;
+	conn = bsc_subscr_con_allocate(lchan->ts->trx->bts->network);
+	lchan->conn = conn;
+	conn->lchan = lchan;
+	/* kick the FSM from INIT through to the ACTIVE state */
+	osmo_fsm_inst_dispatch(conn->fi, GSCON_EV_A_CONN_REQ, NULL);
+	osmo_fsm_inst_dispatch(conn->fi, GSCON_EV_A_CONN_CFM, NULL);
 }
 
 /* create lchan */
