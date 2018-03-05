@@ -1257,6 +1257,11 @@ static const struct log_info_cat log_categories[] = {
 		.color = "\033[1;35m",
 		.enabled = 1, .loglevel = LOGL_DEBUG,
 	},
+	[DMSC] = {
+		.name = "DMSC",
+		.description = "Mobile Switching Center",
+		.enabled = 1, .loglevel = LOGL_DEBUG,
+	},
 };
 
 const struct log_info log_info = {
