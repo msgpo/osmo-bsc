@@ -449,6 +449,9 @@ static void bsc_assign_fail(struct gsm_subscriber_connection *conn,
 static int bsc_clear_request(struct gsm_subscriber_connection *conn, uint32_t cause)
 {
 	struct msgb *resp;
+	if (!conn)
+		return 1;
+
 	return_when_not_connected_val(conn, 1);
 
 	LOGP(DMSC, LOGL_INFO, "Tx MSC CLEAR REQUEST\n");

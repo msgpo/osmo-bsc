@@ -2125,13 +2125,33 @@ static void rsl_handle_release(struct gsm_lchan *lchan)
 	int sapi;
 	struct gsm_bts *bts;
 
-	/*
-	 * Maybe only one link/SAPI was releasd or the error handling
-	 * was activated. Just return now and let the other code handle
-	 * it.
-	 */
-	if (lchan->state != LCHAN_S_REL_REQ)
+	if (lchan->state == LCHAN_S_NONE) {
+		LOGP(DRSL, LOGL_ERROR, "%s Release requested for an unused lchan\n",
+		     gsm_lchan_name(lchan));
 		return;
+	}
+
+	if (lchan->state != LCHAN_S_REL_REQ) {
+		/* The MS asked us to release. */
+		struct bsc_api *bsc_api = lchan->ts->trx->bts->network->bsc_api;
+		if (!bsc_api || !bsc_api->clear_request) {
+			LOGP(DRSL, LOGL_ERROR, "%s FATAL: no bsc_api to dispatch Clear Request\n",
+			     gsm_lchan_name(lchan));
+			return;
+		}
+		rsl_lchan_set_state(lchan, LCHAN_S_REL_REQ);
+
+		if (!lchan->conn) {
+			/* No conn exists, release the lchan right away */
+			lchan->state = LCHAN_S_REL_REQ;
+			rsl_rf_chan_release(lchan, 0, SACCH_NONE);
+			return;
+		}
+
+		/* Kick off a BSSAP Clear Request followed by a full teardown via MSC. */
+		bsc_api->clear_request(lchan->conn, 0);
+		return;
+	}
 
 	for (sapi = 0; sapi < ARRAY_SIZE(lchan->sapis); ++sapi) {
 		if (lchan->sapis[sapi] == LCHAN_SAPI_UNUSED)
