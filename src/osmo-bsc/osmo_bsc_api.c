@@ -454,9 +454,9 @@ static int bsc_clear_request(struct gsm_subscriber_connection *conn, uint32_t ca
 
 	return_when_not_connected_val(conn, 1);
 
-	LOGP(DMSC, LOGL_INFO, "Tx MSC CLEAR REQUEST\n");
+	LOGP(DMSC, LOGL_INFO, "Tx MSC CLEAR REQUEST (cause=%u=0x%x)\n", cause, cause);
 
-	resp = gsm0808_create_clear_rqst(GSM0808_CAUSE_RADIO_INTERFACE_FAILURE);
+	resp = gsm0808_create_clear_rqst(cause);
 	if (!resp) {
 		LOGP(DMSC, LOGL_ERROR, "Failed to allocate response.\n");
 		return 1;
