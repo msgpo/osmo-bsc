@@ -23,6 +23,7 @@ EXTRA_DIST = \
 
 noinst_PROGRAMS = \
 	handover_test \
+	neighbor_ident_test \
 	$(NULL)
 
 handover_test_SOURCES = \
@@ -69,3 +70,17 @@ handover_test_LDADD = \
 	$(LIBOSMOSIGTRAN_LIBS) \
 	$(LIBOSMOMGCPCLIENT_LIBS) \
 	$(NULL)
+
+neighbor_ident_test_SOURCES = \
+	neighbor_ident_test.c \
+	$(NULL)
+
+neighbor_ident_test_LDADD = \
+	$(top_builddir)/src/libbsc/libbsc.a \
+	$(LIBOSMOCORE_LIBS) \
+	$(LIBOSMOGSM_LIBS) \
+	$(NULL)
+
+.PHONY: update_exp
+update_exp:
+	$(builddir)/neighbor_ident_test >$(srcdir)/neighbor_ident_test.ok 2>$(srcdir)/neighbor_ident_test.err
