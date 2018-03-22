@@ -23,6 +23,7 @@
 #include <osmocom/bsc/handover_cfg.h>
 #include <osmocom/bsc/chan_alloc.h>
 #include <osmocom/bsc/common_bsc.h>
+#include <osmocom/bsc/neighbor_ident.h>
 
 /* XXX hard-coded for now */
 #define T3122_CHAN_LOAD_SAMPLE_INTERVAL 1 /* in seconds */
@@ -111,6 +112,8 @@ struct gsm_network *bsc_network_init(void *ctx)
 	}
 
 	gsm_net_update_ctype(net);
+
+	net->neighbor_bss_cells = neighbor_ident_init(net);
 
 	return net;
 }

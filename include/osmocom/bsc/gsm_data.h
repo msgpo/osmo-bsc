@@ -1253,6 +1253,9 @@ struct gsm_network {
 		struct mgcp_client_conf *conf;
 		struct mgcp_client *client;
 	} mgw;
+
+	/* Remote BSS Cell Identifier Lists */
+	struct neighbor_ident_list *neighbor_bss_cells;
 };
 
 static inline const struct osmo_location_area_id *bts_lai(struct gsm_bts *bts)

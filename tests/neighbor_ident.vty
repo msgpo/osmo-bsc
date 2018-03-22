@@ -1,0 +1,119 @@
+OsmoBSC> ### Neighbor-BSS Cell Identifier List config
+
+OsmoBSC> enable
+OsmoBSC# configure terminal
+OsmoBSC(config)# network
+
+OsmoBSC(config-net)# list
+... !neighbor-bss-cell
+  neighbor-bss-cell arfcn <0-1023> (bsic|bsic9) (<0-511>|any) add cgi <0-999> <0-999> <0-65535> <0-255>
+  neighbor-bss-cell arfcn <0-1023> (bsic|bsic9) (<0-511>|any) del
+  neighbor-bss-cell arfcn <0-1023> (bsic|bsic9) (<0-511>|any) resolve
+... !neighbor-bss-cell
+
+OsmoBSC(config-net)# show running-config
+... !neighbor-bss-cell
+
+OsmoBSC(config-net)# neighbor-bss-cell arfcn 23 bsic 64 add cgi 23 42 423 5
+% Error: BSIC value surpasses 6-bit range: 64, use 'bsic9' instead
+
+OsmoBSC(config-net)# show running-config
+... !neighbor-bss-cell
+
+OsmoBSC(config-net)# neighbor-bss-cell arfcn 23 bsic 42 add cgi 23 42 423 5
+% Neighbor-BSS ARFCN 23 BSIC 42 now has 1 Cell Identifier List entries
+
+OsmoBSC(config-net)# ### adding the same entry again results in no change
+OsmoBSC(config-net)# neighbor-bss-cell arfcn 23 bsic 42 add cgi 23 42 423 5
+% Neighbor-BSS ARFCN 23 BSIC 42 now has 1 Cell Identifier List entries
+OsmoBSC(config-net)# neighbor-bss-cell arfcn 23 bsic 42 add cgi 23 42 423 5
+% Neighbor-BSS ARFCN 23 BSIC 42 now has 1 Cell Identifier List entries
+OsmoBSC(config-net)# neighbor-bss-cell arfcn 23 bsic 42 add cgi 23 42 423 5
+% Neighbor-BSS ARFCN 23 BSIC 42 now has 1 Cell Identifier List entries
+
+OsmoBSC(config-net)# neighbor-bss-cell arfcn 23 bsic 42 add cgi 23 042 423 6
+% Neighbor-BSS ARFCN 23 BSIC 42 now has 2 Cell Identifier List entries
+
+OsmoBSC(config-net)# neighbor-bss-cell arfcn 123 bsic 45 add cgi 1 2 3 45
+% Neighbor-BSS ARFCN 123 BSIC 45 now has 1 Cell Identifier List entries
+
+OsmoBSC(config-net)# neighbor-bss-cell arfcn 23 bsic 42 add cgi 23 042 234 56
+% Neighbor-BSS ARFCN 23 BSIC 42 now has 3 Cell Identifier List entries
+
+OsmoBSC(config-net)# neighbor-bss-cell arfcn 42 bsic any add cgi 1 2 3 4
+% Neighbor-BSS ARFCN 42 (any BSIC) now has 1 Cell Identifier List entries
+
+OsmoBSC(config-net)# neighbor-bss-cell arfcn 42 bsic9 511 add cgi 1 2 3 4
+% Neighbor-BSS ARFCN 42 BSIC 511(9bit) now has 1 Cell Identifier List entries
+
+OsmoBSC(config-net)# neighbor-bss-cell arfcn 42 bsic9 1 add cgi 1 2 3 4
+% Neighbor-BSS ARFCN 42 BSIC 1(9bit) now has 1 Cell Identifier List entries
+
+OsmoBSC(config-net)# neighbor-bss-cell arfcn 42 bsic 1 add cgi 1 2 3 4
+% Neighbor-BSS ARFCN 42 BSIC 1 now has 1 Cell Identifier List entries
+
+OsmoBSC(config-net)# show running-config
+...
+network
+... !neighbor-bss-cell
+ neighbor-bss-cell arfcn 23 bsic 42 add cgi 023 42 423 5
+ neighbor-bss-cell arfcn 23 bsic 42 add cgi 023 042 423 6
+ neighbor-bss-cell arfcn 23 bsic 42 add cgi 023 042 234 56
+ neighbor-bss-cell arfcn 123 bsic 45 add cgi 001 02 3 45
+ neighbor-bss-cell arfcn 42 bsic any add cgi 001 02 3 4
+ neighbor-bss-cell arfcn 42 bsic9 511 add cgi 001 02 3 4
+ neighbor-bss-cell arfcn 42 bsic9 1 add cgi 001 02 3 4
+ neighbor-bss-cell arfcn 42 bsic 1 add cgi 001 02 3 4
+... !neighbor-bss-cell
+
+OsmoBSC(config-net)# neighbor-bss-cell arfcn 42 bsic 1 resolve
+% neighbor-bss-cell arfcn 42 bsic 1 add cgi 001 02 3 4
+
+OsmoBSC(config-net)# neighbor-bss-cell arfcn 42 bsic 23 resolve
+% neighbor-bss-cell arfcn 42 bsic 23 add cgi 001 02 3 4
+
+OsmoBSC(config-net)# neighbor-bss-cell arfcn 99 bsic 7 del
+% Error deleting cell identification, entry does not exists
+
+OsmoBSC(config-net)# neighbor-bss-cell arfcn 23 bsic 42 del
+
+OsmoBSC(config-net)# show running-config
+... !neighbor-bss-cell
+ neighbor-bss-cell arfcn 123 bsic 45 add cgi 001 02 3 45
+ neighbor-bss-cell arfcn 42 bsic any add cgi 001 02 3 4
+ neighbor-bss-cell arfcn 42 bsic9 511 add cgi 001 02 3 4
+ neighbor-bss-cell arfcn 42 bsic9 1 add cgi 001 02 3 4
+ neighbor-bss-cell arfcn 42 bsic 1 add cgi 001 02 3 4
+... !neighbor-bss-cell
+
+OsmoBSC(config-net)# neighbor-bss-cell arfcn 123 bsic 45 del
+
+OsmoBSC(config-net)# show running-config
+... !neighbor-bss-cell
+ neighbor-bss-cell arfcn 42 bsic any add cgi 001 02 3 4
+ neighbor-bss-cell arfcn 42 bsic9 511 add cgi 001 02 3 4
+ neighbor-bss-cell arfcn 42 bsic9 1 add cgi 001 02 3 4
+ neighbor-bss-cell arfcn 42 bsic 1 add cgi 001 02 3 4
+... !neighbor-bss-cell
+
+OsmoBSC(config-net)# neighbor-bss-cell arfcn 42 bsic any del
+
+OsmoBSC(config-net)# show running-config
+... !neighbor-bss-cell
+ neighbor-bss-cell arfcn 42 bsic9 511 add cgi 001 02 3 4
+ neighbor-bss-cell arfcn 42 bsic9 1 add cgi 001 02 3 4
+ neighbor-bss-cell arfcn 42 bsic 1 add cgi 001 02 3 4
+... !neighbor-bss-cell
+
+OsmoBSC(config-net)# neighbor-bss-cell arfcn 42 bsic9 511 del
+OsmoBSC(config-net)# neighbor-bss-cell arfcn 42 bsic9 1 del
+
+OsmoBSC(config-net)# show running-config
+... !neighbor-bss-cell
+ neighbor-bss-cell arfcn 42 bsic 1 add cgi 001 02 3 4
+... !neighbor-bss-cell
+
+OsmoBSC(config-net)# neighbor-bss-cell arfcn 42 bsic 1 del
+
+OsmoBSC(config-net)# show running-config
+... !neighbor-bss-cell

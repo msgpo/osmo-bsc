@@ -63,6 +63,7 @@
 #include <osmocom/bsc/gsm_04_08_utils.h>
 #include <osmocom/bsc/acc_ramp.h>
 #include <osmocom/bsc/meas_feed.h>
+#include <osmocom/bsc/neighbor_ident.h>
 
 #include <inttypes.h>
 
@@ -1034,6 +1035,8 @@ static int config_write_net(struct vty *vty)
 			vty_out(vty, " meas-feed scenario %s%s",
 				meas_scenario, VTY_NEWLINE);
 	}
+
+	neighbor_ident_vty_write(gsmnet->neighbor_bss_cells, vty, " ");
 
 	return CMD_SUCCESS;
 }
@@ -4881,6 +4884,7 @@ int bsc_vty_init(struct gsm_network *network)
 	install_element(GSMNET_NODE, &cfg_net_T3141_cmd);
 	install_element(GSMNET_NODE, &cfg_net_dtx_cmd);
 	install_element(GSMNET_NODE, &cfg_net_pag_any_tch_cmd);
+	neighbor_ident_vty_init(network->neighbor_bss_cells, GSMNET_NODE);
 	/* See also handover commands added on net level from handover_vty.c */
 
 	install_element(GSMNET_NODE, &cfg_bts_cmd);

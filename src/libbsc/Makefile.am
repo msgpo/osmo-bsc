@@ -57,6 +57,8 @@ libbsc_a_SOURCES = \
 	bsc_ctrl_commands.c \
 	bsc_ctrl_lookup.c \
 	net_init.c \
+	neighbor_ident.c \
+	neighbor_ident_vty.c \
 	bsc_dyn_ts.c \
 	bts_ipaccess_nanobts_omlattr.c \
 	handover_vty.c \

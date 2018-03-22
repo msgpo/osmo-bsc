@@ -33,6 +33,7 @@ noinst_HEADERS = \
 	meas_rep.h \
 	misdn.h \
 	nat_rewrite_trie.h \
+	neighbor_ident.h \
 	network_listen.h \
 	openbscdefines.h \
 	osmo_bsc.h \

@@ -5,12 +5,15 @@
 #include <osmocom/core/linuxlist.h>
 #include <osmocom/core/timer.h>
 #include <osmocom/gsm/gsm_utils.h>
+#include <osmocom/gsm/gsm0808.h>
 
+#include <osmocom/bsc/neighbor_ident.h>
+
+struct gsm_network;
 struct gsm_lchan;
 struct gsm_bts;
 struct gsm_subscriber_connection;
 struct gsm_meas_rep mr;
-struct gsm0808_cell_id_list2;
 struct gsm0808_handover_required;
 
 #define LOGPHOLCHANTOLCHAN(old_lchan, new_lchan, level, fmt, args...) \
@@ -101,3 +104,10 @@ int bsc_handover_inter_bsc_start(enum hodec_id from_hodec_id, struct gsm_lchan *
 				 enum gsm_chan_t new_lchan_type);
 int bsc_send_handover_required(struct gsm_lchan *lchan,
 			       const struct gsm0808_handover_required *params);
+
+struct gsm_bts *bts_by_neighbor_ident(const struct gsm_network *net,
+				      const struct neighbor_ident_key *search_for);
+struct neighbor_ident_key *bts_ident_key(const struct gsm_bts *bts);
+
+int handover_to_neighbor_ident(enum hodec_id from_hodec_id, struct gsm_lchan *lchan,
+			       struct neighbor_ident_key *ni, enum gsm_chan_t new_lchan_type);

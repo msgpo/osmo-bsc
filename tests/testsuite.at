@@ -52,6 +52,12 @@ cat $abs_srcdir/bssap/bssap_test.err > experr
 AT_CHECK([$abs_top_builddir/tests/bssap/bssap_test], [], [expout], [experr])
 AT_CLEANUP
 
+AT_SETUP([neighbor_ident])
+AT_KEYWORDS([neighbor_ident])
+cat $abs_srcdir/handover/neighbor_ident_test.ok > expout
+AT_CHECK([$abs_top_builddir/tests/handover/neighbor_ident_test], [], [expout], [ignore])
+AT_CLEANUP
+
 AT_SETUP([handover test 0])
 AT_KEYWORDS([handover])
 cat $abs_srcdir/handover/handover_test.ok > expout

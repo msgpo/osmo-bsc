@@ -41,6 +41,7 @@
 #include <osmocom/bsc/handover.h>
 #include <osmocom/bsc/handover_cfg.h>
 #include <osmocom/bsc/bsc_subscr_conn_fsm.h>
+#include <osmocom/bsc/neighbor_ident.h>
 #include <osmocom/gsm/gsm0808.h>
 
 static LLIST_HEAD(bsc_handovers);
@@ -471,4 +472,57 @@ struct handover_decision_callbacks *handover_decision_callbacks_get(int hodec_id
 			return hdc;
 	}
 	return NULL;
+}
+
+struct gsm_bts *bts_by_neighbor_ident(const struct gsm_network *net,
+				      const struct neighbor_ident_key *search_for)
+{
+	struct gsm_bts *bts;
+	struct gsm_bts *wildcard_match = NULL;
+
+	llist_for_each_entry(bts, &net->bts_list, list) {
+		struct neighbor_ident_key entry = {
+			.arfcn = bts->c0->arfcn,
+			.bsic_kind = BSIC_6BIT,
+			.bsic = bts->bsic,
+		};
+		if (neighbor_ident_key_match(&entry, search_for, true))
+			return bts;
+		if (neighbor_ident_key_match(&entry, search_for, false))
+			wildcard_match = bts;
+	}
+
+	return wildcard_match;
+}
+
+struct neighbor_ident_key *bts_ident_key(const struct gsm_bts *bts)
+{
+	static struct neighbor_ident_key key;
+	key = (struct neighbor_ident_key){
+		.arfcn = bts->c0->arfcn,
+		.bsic_kind = BSIC_6BIT,
+		.bsic = bts->bsic,
+	};
+	return &key;
+}
+
+/* issue handover to a cell identified by ARFCN and BSIC */
+int handover_to_neighbor_ident(enum hodec_id from_hodec_id, struct gsm_lchan *lchan,
+			       struct neighbor_ident_key *ni, enum gsm_chan_t new_lchan_type)
+{
+	struct gsm_bts *bts;
+	struct gsm0808_cell_id_list2 *cil;
+
+	bts = bts_by_neighbor_ident(lchan->ts->trx->bts->network, ni);
+	if (bts)
+		return bsc_handover_start(from_hodec_id, lchan, bts, new_lchan_type);
+
+	cil = neighbor_ident_get(lchan->ts->trx->bts->network->neighbor_bss_cells, ni);
+	if (cil)
+		return bsc_handover_inter_bsc_start(from_hodec_id, lchan, cil, new_lchan_type);
+
+	LOGP(DHO, LOGL_ERROR,
+	     "%s Cannot handover to %s: neighbor unknown\n",
+	     gsm_lchan_name(lchan), neighbor_ident_key_name(ni));
+	return -ENOENT;
 }

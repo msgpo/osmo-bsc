@@ -35,44 +35,6 @@
 #include <osmocom/bsc/handover.h>
 #include <osmocom/bsc/handover_cfg.h>
 
-/* Find BTS by ARFCN and BSIC */
-struct gsm_bts *bts_by_arfcn_bsic(const struct gsm_network *net,
-				  uint16_t arfcn, uint8_t bsic)
-{
-	struct gsm_bts *bts;
-
-	llist_for_each_entry(bts, &net->bts_list, list) {
-		if (bts->c0->arfcn == arfcn &&
-		    bts->bsic == bsic)
-			return bts;
-	}
-
-	return NULL;
-}
-
-
-/* issue handover to a cell identified by ARFCN and BSIC */
-static int handover_to_arfcn_bsic(struct gsm_lchan *lchan,
-				  uint16_t arfcn, uint8_t bsic)
-{
-	struct gsm_bts *new_bts;
-
-	/* resolve the gsm_bts structure for the best neighbor */
-	/* FIXME: use some better heuristics here to determine which cell
-	 * using this ARFCN really is closest to the target cell.  For
-	 * now we simply assume that each ARFCN will only be used by one
-	 * cell */
-	new_bts = bts_by_arfcn_bsic(lchan->ts->trx->bts->network, arfcn, bsic);
-	if (!new_bts) {
-		LOGP(DHODEC, LOGL_NOTICE, "unable to determine neighbor BTS "
-		     "for ARFCN %u BSIC %u ?!?\n", arfcn, bsic);
-		return -EINVAL;
-	}
-
-	/* and actually try to handover to that cell */
-	return bsc_handover_start(HODEC1, lchan, new_bts, lchan->type);
-}
-
 /* did we get a RXLEV for a given cell in the given report? */
 static int rxlev_for_cell_in_rep(struct gsm_meas_rep *mr,
 				 uint16_t arfcn, uint8_t bsic)
@@ -202,6 +164,7 @@ static int attempt_handover(struct gsm_meas_rep *mr)
 	struct neigh_meas_proc *best_cell = NULL;
 	unsigned int best_better_db = 0;
 	int i, rc;
+	struct neighbor_ident_key ni;
 
 	/* find the best cell in this report that is at least RXLEV_HYST
 	 * better than the current serving cell */
@@ -238,7 +201,12 @@ static int attempt_handover(struct gsm_meas_rep *mr)
 		return 0;
 	}
 
-	rc = handover_to_arfcn_bsic(mr->lchan, best_cell->arfcn, best_cell->bsic);
+	ni = (struct neighbor_ident_key){
+		.arfcn = best_cell->arfcn,
+		.bsic_kind = BSIC_6BIT,
+		.bsic = best_cell->bsic,
+	};
+	rc = handover_to_neighbor_ident(HODEC1, mr->lchan, &ni, mr->lchan->type);
 	switch (rc) {
 	case 0:
 		LOGPC(DHODEC, LOGL_INFO, "Starting handover: meas report number %d \n", mr->nr);

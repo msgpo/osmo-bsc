@@ -35,6 +35,7 @@
 #include <osmocom/bsc/chan_alloc.h>
 #include <osmocom/bsc/signal.h>
 #include <osmocom/bsc/penalty_timers.h>
+#include <osmocom/bsc/neighbor_ident.h>
 
 #define LOGPHOBTS(bts, level, fmt, args...) \
 	LOGP(DHODEC, level, "(BTS %u) " fmt, bts->nr, ## args)
@@ -74,7 +75,8 @@
 
 struct ho_candidate {
 	struct gsm_lchan *lchan;	/* candidate for whom */
-	struct gsm_bts *bts;		/* target BTS */
+	struct gsm_bts *bts;		/* target BTS in local BSS */
+	struct gsm0808_cell_id_list2 *cil; /* target cells in remote BSS */
 	uint8_t requirements;		/* what is fulfilled */
 	int avg;			/* average RX level */
 };
@@ -687,8 +689,8 @@ static int trigger_handover_or_assignment(struct gsm_lchan *lchan, struct gsm_bt
 				 full_rate ? "TCH/F" : "TCH/H",
 				 ho_reason_name(global_ho_reason));
 
-	return bsc_handover_start(HODEC2, lchan, current_bts == new_bts? NULL : new_bts,
-				  full_rate? GSM_LCHAN_TCH_F : GSM_LCHAN_TCH_H);
+	return handover_to_neighbor_ident(HODEC2, lchan, bts_ident_key(new_bts),
+					  full_rate? GSM_LCHAN_TCH_F : GSM_LCHAN_TCH_H);
 }
 
 /* debug collected candidates */
@@ -788,6 +790,12 @@ static void collect_handover_candidate(struct gsm_lchan *lchan, struct neigh_mea
 	struct gsm_bts *bts = lchan->ts->trx->bts;
 	int tchf_count, tchh_count;
 	struct gsm_bts *neighbor_bts;
+	struct gsm0808_cell_id_list2 *neighbor_cil;
+	struct neighbor_ident_key ni = {
+		.arfcn = nmp->arfcn,
+		.bsic_kind = BSIC_6BIT,
+		.bsic = nmp->bsic,
+	};
 	int avg;
 	struct ho_candidate *c;
 	int min_rxlev;
@@ -801,16 +809,28 @@ static void collect_handover_candidate(struct gsm_lchan *lchan, struct neigh_mea
 
 	/* skip if measurement report is old */
 	if (nmp->last_seen_nr != lchan->meas_rep_last_seen_nr) {
-		LOGPHOLCHAN(lchan, LOGL_DEBUG, "neighbor ARFCN %u measurement report is old"
+		LOGPHOLCHAN(lchan, LOGL_DEBUG, "neighbor ARFCN %u BSIC %u measurement report is old"
 			    " (nmp->last_seen_nr=%u lchan->meas_rep_last_seen_nr=%u)\n",
-			    nmp->arfcn, nmp->last_seen_nr, lchan->meas_rep_last_seen_nr);
+			    nmp->arfcn, nmp->bsic, nmp->last_seen_nr, lchan->meas_rep_last_seen_nr);
 		return;
 	}
 
-	neighbor_bts = bts_by_arfcn_bsic(bts->network, nmp->arfcn, nmp->bsic);
+	neighbor_bts = bts_by_neighbor_ident(bts->network, &ni);
 	if (!neighbor_bts) {
-		LOGPHOBTS(bts, LOGL_DEBUG, "neighbor ARFCN %u does not belong to this network\n",
-			  nmp->arfcn);
+		neighbor_cil = neighbor_ident_get(bts->network->neighbor_bss_cells, &ni);
+		if (neighbor_cil) {
+			LOGPHOBTS(bts, LOGL_DEBUG, "neighbor ARFCN %u BSIC %u does not belong to this BSS\n",
+				  nmp->arfcn, nmp->bsic);
+			LOGPHOBTS(bts, LOGL_ERROR, "neighbor ARFCN %u BSIC %u does not belong to this BSS,"
+				  " would handover to neighbor BSS but"
+				  " inter-BSC handover for handover algorithm 2 not implemented!\n",
+				  nmp->arfcn, nmp->bsic);
+			/* FIXME */
+			return;
+		}
+
+		LOGPHOBTS(bts, LOGL_DEBUG, "neighbor ARFCN %u BSIC %u does not belong to this network\n",
+			  nmp->arfcn, nmp->bsic);
 		return;
 	}
 
@@ -820,7 +840,7 @@ static void collect_handover_candidate(struct gsm_lchan *lchan, struct neigh_mea
 		return;
 	}
 
-	/* caculate average rxlev for this cell over the window */
+	/* calculate average rxlev for this cell over the window */
 	avg = neigh_meas_avg(nmp, ho_get_hodec2_rxlev_neigh_avg_win(bts->ho));
 
 	/* Heed rxlev hysteresis only if the RXLEV/RXQUAL/TA levels of the MS aren't critically bad and
