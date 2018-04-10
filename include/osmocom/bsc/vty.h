@@ -35,4 +35,6 @@ int bsc_vty_init_extra(void);
 
 struct gsm_network *gsmnet_from_vty(struct vty *vty);
 
+int warn_on_arfcn_bsic_collisions(struct gsm_network *net, struct vty *vty);
+
 #endif
