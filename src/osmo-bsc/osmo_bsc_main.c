@@ -536,6 +536,8 @@ static int bsc_vty_go_parent(struct vty *vty)
 			vty->index = bts->network;
 			vty->index_sub = NULL;
 		}
+		if (vty->type != VTY_FILE)
+			warn_on_arfcn_bsic_collisions(bsc_gsmnet, vty);
 		break;
 	case TRX_NODE:
 		vty->node = BTS_NODE;
@@ -825,6 +827,8 @@ int main(int argc, char **argv)
 		fprintf(stderr, "Bootstrapping the network failed. exiting.\n");
 		exit(1);
 	}
+	if (warn_on_arfcn_bsic_collisions(bsc_gsmnet, NULL))
+		exit(1);
 
 	/* start control interface after reading config for
 	 * ctrl_vty_get_bind_addr() */
