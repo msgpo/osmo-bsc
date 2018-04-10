@@ -2149,6 +2149,30 @@ DEFUN_HIDDEN(cfg_bts_tsc,
 	return CMD_SUCCESS;
 }
 
+int warn_on_arfcn_bsic_collisions(struct gsm_network *net, struct vty *vty)
+{
+	struct gsm_bts *bts, *bts2;
+	int errors = 0;
+
+	llist_for_each_entry(bts, &net->bts_list, list) {
+		struct neighbor_ident_key *nik = bts_ident_key(bts);
+
+		bts2 = bts_by_neighbor_ident(net, nik);
+		if (bts != bts2) {
+			LOGP(DHO, LOGL_ERROR, "CONFIG ERROR: Multiple BTS match %s: %d and %d\n",
+			     neighbor_ident_key_name(nik), bts->nr, bts2->nr);
+			fprintf(stderr, "CONFIG ERROR: Multiple BTS match %s: %d and %d\n",
+				neighbor_ident_key_name(nik), bts->nr, bts2->nr);
+			if (vty)
+				vty_out(vty, "%% CONFIG ERROR: Multiple BTS match %s: %d and %d%s",
+					neighbor_ident_key_name(nik), bts->nr, bts2->nr,
+					VTY_NEWLINE);
+			errors ++;
+		}
+	}
+	return errors;
+}
+
 DEFUN(cfg_bts_bsic,
       cfg_bts_bsic_cmd,
       "base_station_id_code <0-63>",
@@ -2164,6 +2188,9 @@ DEFUN(cfg_bts_bsic,
 		return CMD_WARNING;
 	}
 	bts->bsic = bsic;
+
+	if (vty->type != VTY_FILE)
+		warn_on_arfcn_bsic_collisions(bts->network, vty);
 
 	return CMD_SUCCESS;
 }
@@ -3913,6 +3940,9 @@ DEFUN(cfg_trx_arfcn,
 	/* FIXME: patch ARFCN into SYSTEM INFORMATION */
 	/* FIXME: use OML layer to update the ARFCN */
 	/* FIXME: use RSL layer to update SYSTEM INFORMATION */
+
+	if (vty->type != VTY_FILE)
+		warn_on_arfcn_bsic_collisions(trx->bts->network, vty);
 
 	return CMD_SUCCESS;
 }
