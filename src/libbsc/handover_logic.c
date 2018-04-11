@@ -579,6 +579,7 @@ int handover_count(struct gsm_bts *bts, int ho_scopes)
 struct gsm_bts *bts_by_neighbor_ident(const struct gsm_network *net,
 				      const struct neighbor_ident_key *search_for)
 {
+	struct gsm_bts *found = NULL;
 	struct gsm_bts *bts;
 	struct gsm_bts *wildcard_match = NULL;
 
@@ -588,11 +589,21 @@ struct gsm_bts *bts_by_neighbor_ident(const struct gsm_network *net,
 			.bsic_kind = BSIC_6BIT,
 			.bsic = bts->bsic,
 		};
-		if (neighbor_ident_key_match(&entry, search_for, true))
-			return bts;
+		if (neighbor_ident_key_match(&entry, search_for, true)) {
+			if (found) {
+				LOGP(DHO, LOGL_ERROR, "CONFIG ERROR: Multiple BTS match %s: %d and %d\n",
+				     neighbor_ident_key_name(search_for),
+				     found->nr, bts->nr);
+				return found;
+			}
+			found = bts;
+		}
 		if (neighbor_ident_key_match(&entry, search_for, false))
 			wildcard_match = bts;
 	}
+
+	if (found)
+		return found;
 
 	return wildcard_match;
 }
