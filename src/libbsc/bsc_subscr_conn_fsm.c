@@ -147,82 +147,15 @@ static void sigtran_send(struct gsm_subscriber_connection *conn, struct msgb *ms
 /* See TS 48.008 3.2.2.11 Channel Type Octet 5 */
 static int bssap_speech_from_lchan(const struct gsm_lchan *lchan)
 {
-	switch (lchan->type) {
-	case GSM_LCHAN_TCH_H:
-		switch (lchan->tch_mode) {
-		case GSM48_CMODE_SPEECH_V1:
-			return 0x05;
-		case GSM48_CMODE_SPEECH_AMR:
-			return 0x25;
-		default:
-			return -1;
-		}
-		break;
-	case GSM_LCHAN_TCH_F:
-		switch (lchan->tch_mode) {
-		case GSM48_CMODE_SPEECH_V1:
-			return 0x01;
-		case GSM48_CMODE_SPEECH_EFR:
-			return 0x11;
-		case GSM48_CMODE_SPEECH_AMR:
-			return 0x21;
-		default:
-			return -1;
-		}
-		break;
-	default:
-		return -1;
-	}
+	return gsm0808_permitted_speech(lchan->type, lchan->tch_mode);
 }
 
-/* GSM 08.08 3.2.2.33 */
 static uint8_t lchan_to_chosen_channel(struct gsm_lchan *lchan)
 {
-	uint8_t channel_mode = 0, channel = 0;
-
-	switch (lchan->tch_mode) {
-	case GSM48_CMODE_SPEECH_V1:
-	case GSM48_CMODE_SPEECH_EFR:
-	case GSM48_CMODE_SPEECH_AMR:
-		channel_mode = 0x9;
-		break;
-	case GSM48_CMODE_SIGN:
-		channel_mode = 0x8;
-		break;
-	case GSM48_CMODE_DATA_14k5:
-		channel_mode = 0xe;
-		break;
-	case GSM48_CMODE_DATA_12k0:
-		channel_mode = 0xb;
-		break;
-	case GSM48_CMODE_DATA_6k0:
-		channel_mode = 0xc;
-		break;
-	case GSM48_CMODE_DATA_3k6:
-		channel_mode = 0xd;
-		break;
-	}
-
-	switch (lchan->type) {
-	case GSM_LCHAN_NONE:
-		channel = 0x0;
-		break;
-	case GSM_LCHAN_SDCCH:
-		channel = 0x1;
-		break;
-	case GSM_LCHAN_TCH_F:
-		channel = 0x8;
-		break;
-	case GSM_LCHAN_TCH_H:
-		channel = 0x9;
-		break;
-	case GSM_LCHAN_UNKNOWN:
-	default:
-		LOGP(DMSC, LOGL_ERROR, "Unknown lchan type: %p\n", lchan);
-		break;
-	}
-
-	return channel_mode << 4 | channel;
+	uint8_t chosen_channel = gsm0808_chosen_channel(lchan->tch_mode, lchan->type);
+	if (!chosen_channel)
+		LOGP(DMSC, LOGL_ERROR, "Unknown lchan type or TCH mode: %s\n", gsm_lchan_name(lchan));
+	return chosen_channel;
 }
 
 /* Generate and send assignment complete message */

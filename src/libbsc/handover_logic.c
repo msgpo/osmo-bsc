@@ -128,7 +128,8 @@ static void handover_start_inter_bsc_mo(struct handover *ho,
 	case GSM_LCHAN_TCH_F:
 	case GSM_LCHAN_TCH_H:
 		ho_required_params.speech_version_used_present = true;
-		ho_required_params.speech_version_used = chan_to_perm_speech(old_lchan->type, old_lchan->tch_mode);
+		ho_required_params.speech_version_used = gsm0808_permitted_speech(old_lchan->type,
+										  old_lchan->tch_mode);
 		if (!ho_required_params.speech_version_used) {
 			LOGPHO(ho, LOGL_ERROR,
 			       "Cannot encode Speech Version (Used) for HANDOVER REQUIRED message\n");

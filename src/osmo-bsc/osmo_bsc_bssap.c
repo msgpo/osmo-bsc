@@ -1058,11 +1058,11 @@ int bsc_send_handover_request_ack(struct handover *ho, struct msgb *rr_ho_comman
 	struct gsm_lchan *new_lchan = ho->mt.new_lchan;
 
 	msg = gsm0808_create_handover_request_ack(rr_ho_command->data, rr_ho_command->len,
-						  osmo_chosen_channel(new_lchan->type,
-								      new_lchan->tch_mode),
+						  gsm0808_chosen_channel(new_lchan->type,
+									 new_lchan->tch_mode),
 						  new_lchan->encr.alg_id,
-						  chan_to_perm_speech(new_lchan->type,
-								      new_lchan->tch_mode));
+						  gsm0808_permitted_speech(new_lchan->type,
+									   new_lchan->tch_mode));
 	msgb_free(rr_ho_command);
 	if (!msg)
 		return -ENOMEM;
