@@ -31,6 +31,8 @@
 #include <osmocom/bsc/system_information.h>
 #include <osmocom/bsc/abis_rsl.h>
 
+#include <osmocom/bsc/bsc_stubs.h>
+
 #include <osmocom/core/application.h>
 #include <osmocom/core/byteswap.h>
 #include <osmocom/gsm/sysinfo.h>
@@ -843,8 +845,4 @@ int main(int argc, char **argv)
 	printf("Done.\n");
 
 	return EXIT_SUCCESS;
-}
-
-struct gsm_subscriber_connection *bsc_subscr_con_allocate(struct gsm_network *net) {
-	OSMO_ASSERT(0);
 }

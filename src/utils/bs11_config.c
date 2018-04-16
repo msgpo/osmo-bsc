@@ -45,6 +45,8 @@
 #include <osmocom/abis/abis.h>
 #include <osmocom/abis/e1_input.h>
 
+#include "osmocom/bsc/bsc_stubs.h"
+
 static void *tall_bs11cfg_ctx;
 static struct e1inp_sign_link *oml_link;
 
@@ -968,16 +970,4 @@ int main(int argc, char **argv)
 	abis_nm_bs11_factory_logon(g_bts, 0);
 
 	exit(0);
-}
-
-/* Stub */
-int osmo_bsc_sigtran_send(struct gsm_subscriber_connection *conn, struct msgb *msg)
-{
-	return 0;
-}
-
-/* Stub */
-int osmo_bsc_sigtran_open_conn(struct gsm_subscriber_connection *conn, struct msgb *msg)
-{
-	return 0;
 }

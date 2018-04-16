@@ -55,6 +55,8 @@
 #include <osmocom/abis/abis.h>
 #include <osmocom/gsm/protocol/gsm_12_21.h>
 
+#include <osmocom/bsc/bsc_stubs.h>
+
 struct gsm_network *bsc_gsmnet;
 
 static int net_listen_testnr;
@@ -1071,16 +1073,4 @@ int main(int argc, char **argv)
 	}
 
 	exit(0);
-}
-
-/* Stub */
-int osmo_bsc_sigtran_send(struct gsm_subscriber_connection *conn, struct msgb *msg)
-{
-	return 0;
-}
-
-/* Stub */
-int osmo_bsc_sigtran_open_conn(struct gsm_subscriber_connection *conn, struct msgb *msg)
-{
-	return 0;
 }

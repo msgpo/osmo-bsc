@@ -29,6 +29,8 @@
 #include <osmocom/bsc/abis_rsl.h>
 #include <osmocom/bsc/debug.h>
 
+#include <osmocom/bsc/bsc_stubs.h>
+
 void test_bts_debug_print(void)
 {
 	struct gsm_network *network;

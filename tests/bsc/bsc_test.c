@@ -32,6 +32,8 @@
 #include <osmocom/bsc/gsm_04_80.h>
 #include <osmocom/bsc/common_bsc.h>
 
+#include <osmocom/bsc/bsc_stubs.h>
+
 #include <osmocom/core/application.h>
 #include <osmocom/core/backtrace.h>
 #include <osmocom/core/talloc.h>
@@ -238,8 +240,4 @@ int main(int argc, char **argv)
 	printf("Testing execution completed.\n");
 	talloc_free(ctx);
 	return 0;
-}
-
-struct gsm_subscriber_connection *bsc_subscr_con_allocate(struct gsm_network *net) {
-	OSMO_ASSERT(0);
 }

@@ -29,6 +29,8 @@
 #include <osmocom/bsc/bsc_msg_filter.h>
 #include <osmocom/bsc/nat_rewrite_trie.h>
 
+#include <osmocom/bsc/bsc_stubs.h>
+
 #include <osmocom/core/application.h>
 #include <osmocom/core/backtrace.h>
 #include <osmocom/core/talloc.h>
