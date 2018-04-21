@@ -18,6 +18,7 @@
 #include <osmocom/bsc/bsc_subscriber.h>
 #include <osmocom/bsc/meas_feed.h>
 #include <osmocom/bsc/vty.h>
+#include <osmocom/bsc/debug.h>
 
 struct meas_feed_state {
 	struct osmo_wqueue wqueue;
@@ -35,8 +36,14 @@ static int process_meas_rep(struct gsm_meas_rep *mr)
 	struct bsc_subscr *bsub;
 
 	/* ignore measurements as long as we don't know who it is */
-	if (!mr->lchan || !mr->lchan->conn || !mr->lchan->conn->bsub)
+	if (!mr->lchan) {
+		LOGP(DMEAS, LOGL_DEBUG, "meas_feed: no lchan, not sending report\n");
 		return 0;
+	}
+	if (!mr->lchan->conn) {
+		LOGP(DMEAS, LOGL_DEBUG, "meas_feed: lchan without conn, not sending report\n");
+		return 0;
+	}
 
 	bsub = mr->lchan->conn->bsub;
 
@@ -50,7 +57,8 @@ static int process_meas_rep(struct gsm_meas_rep *mr)
 	mfm->hdr.version = MEAS_FEED_VERSION;
 
 	/* fill in MEAS_FEED_MEAS specific header */
-	osmo_strlcpy(mfm->imsi, bsub->imsi, sizeof(mfm->imsi));
+	if (bsub)
+		osmo_strlcpy(mfm->imsi, bsub->imsi, sizeof(mfm->imsi));
 	/* This used to be a human readable meaningful name set in the old osmo-nitb's subscriber
 	 * database. Now we're several layers away from that (and possibly don't even have a name in
 	 * osmo-hlr either), hence this is a legacy item now that we should leave empty ... *but*:
@@ -74,8 +82,13 @@ static int process_meas_rep(struct gsm_meas_rep *mr)
 	mfm->ss_nr = mr->lchan->nr;
 
 	/* and send it to the socket */
-	if (osmo_wqueue_enqueue(&g_mfs.wqueue, msg) != 0)
+	if (osmo_wqueue_enqueue(&g_mfs.wqueue, msg) != 0) {
+		LOGP(DMEAS, LOGL_ERROR, "meas_feed %s: sending measurement report failed\n",
+		     gsm_lchan_name(mr->lchan));
 		msgb_free(msg);
+	} else
+		LOGP(DMEAS, LOGL_DEBUG, "meas_feed %s: sent measurement report\n",
+		     gsm_lchan_name(mr->lchan));
 
 	return 0;
 }
@@ -129,6 +142,7 @@ int meas_feed_cfg_set(const char *dst_host, uint16_t dst_port)
 		g_mfs.wqueue.write_cb = feed_write_cb;
 		g_mfs.wqueue.read_cb = feed_read_cb;
 		osmo_signal_register_handler(SS_LCHAN, meas_feed_sig_cb, NULL);
+		LOGP(DMEAS, LOGL_DEBUG, "meas_feed: registered signal callback\n");
 	}
 
 	if (already_initialized) {
