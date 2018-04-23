@@ -37,21 +37,33 @@
 
 bool ts_is_usable(const struct gsm_bts_trx_ts *ts)
 {
-	if (!trx_is_usable(ts->trx))
+	if (!trx_is_usable(ts->trx)) {
+		LOGP(DRLL, LOGL_DEBUG, "bts%d-trx%d not usable\n", ts->trx->bts->nr, ts->trx->nr);
 		return false;
+	}
 
 	/* If a TCH/F_PDCH TS is busy changing, it is already taken or not
 	 * yet available. */
 	if (ts->pchan == GSM_PCHAN_TCH_F_PDCH) {
-		if (ts->flags & TS_F_PDCH_PENDING_MASK)
+		if (ts->flags & TS_F_PDCH_PENDING_MASK) {
+			LOGP(DRLL, LOGL_DEBUG, "bts%d-trx%d-ts%d %s"
+			     " ts->flags & TS_F_PDCH_PENDING_MASK = 0x%x, not available\n",
+			     ts->trx->bts->nr, ts->trx->nr, ts->nr, gsm_pchan_name(ts->pchan),
+			     ts->flags & TS_F_PDCH_PENDING_MASK);
 			return false;
+		}
 	}
 
 	/* If a dynamic channel is busy changing, it is already taken or not
 	 * yet available. */
 	if (ts->pchan == GSM_PCHAN_TCH_F_TCH_H_PDCH) {
-		if (ts->dyn.pchan_is != ts->dyn.pchan_want)
+		if (ts->dyn.pchan_is != ts->dyn.pchan_want) {
+			LOGP(DRLL, LOGL_DEBUG, "bts%d-trx%d-ts%d %s"
+			     " dyn.pchan_is=%s != dyn.pchan_want=%s, not available\n",
+			     ts->trx->bts->nr, ts->trx->nr, ts->nr, gsm_pchan_name(ts->pchan),
+			     gsm_pchan_name(ts->dyn.pchan_is), gsm_pchan_name(ts->dyn.pchan_want));
 			return false;
+		}
 	}
 
 	return true;
@@ -141,8 +153,14 @@ _lc_find_trx(struct gsm_bts_trx *trx, enum gsm_phys_chan_config pchan,
 	int j, start, stop, dir, ss;
 	int check_subslots;
 
-	if (!trx_is_usable(trx))
+	if (!trx_is_usable(trx)) {
+		LOGP(DRLL, LOGL_DEBUG, "bts%d-trx%d _lc_find_trx(%s as %s) trx not usable\n",
+		     trx->bts->nr, trx->nr, gsm_pchan_name(pchan), gsm_pchan_name(dyn_as_pchan));
 		return NULL;
+	}
+
+	LOGP(DRLL, LOGL_DEBUG, "bts%d-trx%d _lc_find_trx(%s as %s)\n",
+	     trx->bts->nr, trx->nr, gsm_pchan_name(pchan), gsm_pchan_name(dyn_as_pchan));
 
 	if (trx->bts->chan_alloc_reverse) {
 		/* check TS 7..0 */
@@ -158,10 +176,17 @@ _lc_find_trx(struct gsm_bts_trx *trx, enum gsm_phys_chan_config pchan,
 
 	for (j = start; j != stop; j += dir) {
 		ts = &trx->ts[j];
-		if (!ts_is_usable(ts))
+		if (!ts_is_usable(ts)) {
+			LOGP(DRLL, LOGL_DEBUG, "bts%d-trx%d _lc_find_trx(%s as %s) ts%d not usable\n",
+			     trx->bts->nr, trx->nr, gsm_pchan_name(pchan), gsm_pchan_name(dyn_as_pchan), j);
 			continue;
-		if (ts->pchan != pchan)
+		}
+		if (ts->pchan != pchan) {
+			LOGP(DRLL, LOGL_DEBUG, "bts%d-trx%d _lc_find_trx(%s as %s) ts%d is %s != %s\n",
+			     trx->bts->nr, trx->nr, gsm_pchan_name(pchan), gsm_pchan_name(dyn_as_pchan), j,
+			     gsm_pchan_name(ts->pchan), gsm_pchan_name(pchan));
 			continue;
+		}
 
 		/*
 		 * Allocation for fully dynamic timeslots
@@ -199,13 +224,24 @@ _lc_find_trx(struct gsm_bts_trx *trx, enum gsm_phys_chan_config pchan,
 				 * error states to be sure; in all cases the
 				 * first lchan will be used. */
 				if (ts->lchan->state != LCHAN_S_NONE
-				    && ts->lchan->state != LCHAN_S_ACTIVE)
+				    && ts->lchan->state != LCHAN_S_ACTIVE) {
+
+					LOGP(DRLL, LOGL_DEBUG, "bts%d-trx%d _lc_find_trx(%s as %s) ts%d"
+					     " state = %s, not suitable\n",
+					     trx->bts->nr, trx->nr, gsm_pchan_name(pchan), gsm_pchan_name(dyn_as_pchan), j,
+					     gsm_lchans_name(ts->lchan->state));
 					continue;
+				}
 				return ts->lchan;
 			}
-			if (ts->dyn.pchan_is != dyn_as_pchan)
+			if (ts->dyn.pchan_is != dyn_as_pchan) {
+				LOGP(DRLL, LOGL_DEBUG, "bts%d-trx%d _lc_find_trx(%s as %s) ts%d"
+				     " dyn.pchan_is = %s, want %s, not suitable\n",
+				     trx->bts->nr, trx->nr, gsm_pchan_name(pchan), gsm_pchan_name(dyn_as_pchan), j,
+				     gsm_pchan_name(ts->dyn.pchan_is), gsm_pchan_name(dyn_as_pchan));
 				/* not applicable. */
 				continue;
+			}
 			/* The requested type matches the dynamic timeslot's
 			 * current mode. A channel may still be available
 			 * (think TCH/H). */
@@ -231,6 +267,10 @@ _lc_find_trx(struct gsm_bts_trx *trx, enum gsm_phys_chan_config pchan,
 			if (lc->type == GSM_LCHAN_NONE &&
 			    lc->state == LCHAN_S_NONE)
 				return lc;
+			LOGP(DRLL, LOGL_DEBUG, "bts%d-trx%d _lc_find_trx(%s as %s) ts%d"
+			     " ss %d type=%s state=%s, not suitable\n",
+			     trx->bts->nr, trx->nr, gsm_pchan_name(pchan), gsm_pchan_name(dyn_as_pchan), j,
+			     ss, gsm_lchant_name(lc->type), gsm_lchans_name(lc->state));
 		}
 	}
 
@@ -281,6 +321,8 @@ struct gsm_lchan *lchan_alloc(struct gsm_bts *bts, enum gsm_chan_t type,
 {
 	struct gsm_lchan *lchan = NULL;
 	enum gsm_phys_chan_config first, first_cbch, second, second_cbch;
+
+	LOGP(DRLL, LOGL_DEBUG, "bts-%d lchan_alloc(%s)\n", bts->nr, gsm_lchant_name(type));
 
 	switch (type) {
 	case GSM_LCHAN_SDCCH:
@@ -377,18 +419,29 @@ struct gsm_lchan *lchan_alloc(struct gsm_bts *bts, enum gsm_chan_t type,
 		lchan = _lc_find_bts(bts, GSM_PCHAN_TCH_H);
 		/* If we don't have TCH/H available, fall-back to TCH/F */
 		if (!lchan) {
+			LOGP(DRLL, LOGL_DEBUG, "bts-%d lchan_alloc(%s) no TCH/H available, try TCH/F\n", bts->nr, gsm_lchant_name(type));
 			lchan = _lc_find_bts(bts, GSM_PCHAN_TCH_F);
-			if (lchan)
+			if (lchan) {
+				LOGP(DRLL, LOGL_DEBUG, "bts-%d lchan_alloc(%s) found TCH/H %s\n",
+				     bts->nr, gsm_lchant_name(type), gsm_lchan_name(lchan));
 				type = GSM_LCHAN_TCH_F;
+			}
 		}
 		/* No dedicated TCH/x available -- try fully dynamic
 		 * TCH/F_TCH/H_PDCH */
 		if (!lchan) {
+			LOGP(DRLL, LOGL_DEBUG,
+			     "bts-%d lchan_alloc(%s) no TCH/H nor TCH/F, try TCH/F_TCH/H_PDCH\n",
+			     bts->nr, gsm_lchant_name(type));
 			lchan = _lc_dyn_find_bts(bts,
 						 GSM_PCHAN_TCH_F_TCH_H_PDCH,
 						 GSM_PCHAN_TCH_H);
-			if (lchan)
+			if (lchan) {
+				LOGP(DRLL, LOGL_DEBUG,
+				     "bts-%d lchan_alloc(%s) found TCH/F_TCH/H_PDCH %s\n",
+				     bts->nr, gsm_lchant_name(type), gsm_lchan_name(lchan));
 				type = GSM_LCHAN_TCH_H;
+			}
 		}
 		/*
 		 * No need to check TCH/F_TCH/H_PDCH channels for TCH/F:
@@ -396,9 +449,16 @@ struct gsm_lchan *lchan_alloc(struct gsm_bts *bts, enum gsm_chan_t type,
 		 */
 		/* If we don't have TCH/F either, try dynamic TCH/F_PDCH */
 		if (!lchan) {
+			LOGP(DRLL, LOGL_DEBUG,
+			     "bts-%d lchan_alloc(%s) no TCH/H nor TCH/F nor TCH/F_TCH/H_PDCH, try TCH/F_PDCH\n",
+			     bts->nr, gsm_lchant_name(type));
 			lchan = _lc_find_bts(bts, GSM_PCHAN_TCH_F_PDCH);
-			if (lchan)
+			if (lchan) {
+				LOGP(DRLL, LOGL_DEBUG,
+				     "bts-%d lchan_alloc(%s) found TCH/F_PDCH %s\n",
+				     bts->nr, gsm_lchant_name(type), gsm_lchan_name(lchan));
 				type = GSM_LCHAN_TCH_F;
+			}
 		}
 		break;
 	default:
