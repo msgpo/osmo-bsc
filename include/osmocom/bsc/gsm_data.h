@@ -188,6 +188,18 @@ struct gsm_subscriber_connection {
 		enum gsm48_chan_mode chan_mode;
 
 	} user_plane;
+
+	struct {
+		enum gscon_fsm_states next_state;
+		unsigned int timeout_secs;
+		int T;
+		uint32_t success_event;
+		uint32_t failure_event;
+		enum gsm0808_cause cause;
+		struct gsm_lchan *new_lchan;
+		enum gsm48_chan_mode chan_mode;
+		bool full_rate;
+	} lchan_alloc;
 };
 
 

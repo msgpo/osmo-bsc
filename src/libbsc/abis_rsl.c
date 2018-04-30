@@ -544,54 +544,6 @@ int rsl_chan_activate_lchan(struct gsm_lchan *lchan, uint8_t act_type,
 	struct rsl_ie_chan_mode cm;
 	struct gsm48_chan_desc cd;
 
-	/* If a TCH_F/PDCH TS is in PDCH mode, deactivate PDCH first. */
-	if (lchan->ts->pchan == GSM_PCHAN_TCH_F_PDCH
-	    && (lchan->ts->flags & TS_F_PDCH_ACTIVE)) {
-		/* store activation type and handover reference */
-		lchan->dyn.act_type = act_type;
-		lchan->dyn.ho_ref = ho_ref;
-		return rsl_ipacc_pdch_activate(lchan->ts, 0);
-	}
-
-	/*
-	 * If necessary, release PDCH on dynamic TS. Note that sending a
-	 * release here is only necessary when in PDCH mode; for TCH types, an
-	 * RSL RF Chan Release is initiated by the BTS when a voice call ends,
-	 * so when we reach this, it will already be released. If a dyn TS is
-	 * in PDCH mode, it is still active and we need to initiate a release
-	 * from the BSC side here.
-	 *
-	 * If pchan_is != pchan_want, the PDCH has already been taken down and
-	 * the switchover now needs to enable the TCH lchan.
-	 *
-	 * To switch a dyn TS between TCH/H and TCH/F, it is sufficient to send
-	 * a chan activ with the new lchan type, because it will already be
-	 * released.
-	 */
-	if (lchan->ts->pchan == GSM_PCHAN_TCH_F_TCH_H_PDCH
-	    && lchan->ts->dyn.pchan_is == GSM_PCHAN_PDCH
-	    && lchan->ts->dyn.pchan_is == lchan->ts->dyn.pchan_want) {
-		enum gsm_phys_chan_config pchan_want;
-		pchan_want = pchan_for_lchant(lchan->type);
-		if (lchan->ts->dyn.pchan_is != pchan_want) {
-			/*
-			 * Make sure to record on lchan[0] so that we'll find
-			 * it after the PDCH release.
-			 */
-			struct gsm_lchan *lchan0 = lchan->ts->lchan;
-			lchan0->dyn.act_type = act_type,
-			lchan0->dyn.ho_ref = ho_ref;
-			lchan0->dyn.rqd_ref = lchan->rqd_ref;
-			lchan0->dyn.rqd_ta = lchan->rqd_ta;
-			lchan->rqd_ref = NULL;
-			lchan->rqd_ta = 0;
-			DEBUGP(DRSL, "%s saved rqd_ref=%p ta=%u\n",
-			       gsm_lchan_name(lchan0), lchan0->rqd_ref,
-			       lchan0->rqd_ta);
-			return dyn_ts_switchover_start(lchan->ts, pchan_want);
-		}
-	}
-
 	DEBUGP(DRSL, "%s Tx RSL Channel Activate with act_type=%s\n",
 	       gsm_ts_and_pchan_name(lchan->ts),
 	       rsl_act_type_name(act_type));

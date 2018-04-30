@@ -166,6 +166,9 @@ static int nm_statechg_event(int evt, struct nm_statechg_signal_data *nsd)
 		    new_state->availability == NM_AVSTATE_DEPENDENCY) {
 			enum abis_nm_chan_comb ccomb =
 						abis_nm_chcomb4pchan(ts->pchan);
+			LOGP(DNM, LOGL_ERROR, "%s pchan=%s Channel state chg, ccomb=0x%x\n",
+			     gsm_ts_name(ts), gsm_pchan_name(ts->pchan), ccomb);
+
 			if (abis_nm_set_channel_attr(ts, ccomb) == -EINVAL) {
 				ipaccess_drop_oml(trx->bts);
 				return -1;

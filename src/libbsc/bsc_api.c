@@ -92,74 +92,6 @@ static void handle_mr_config(struct gsm_subscriber_connection *conn,
 	gsm48_multirate_config(lchan->mr_bts_lv, mr, mr->bts_mode);
 }
 
-/*
- * Start a new assignment and make sure that it is completed within T10 either
- * positively, negatively or by the timeout.
- *
- *  1.) allocate a new lchan
- *  2.) copy the encryption key and other data from the
- *      old to the new channel.
- *  3.) RSL Channel Activate this channel and wait
- *
- * -> Signal handler for the LCHAN
- *  4.) Send GSM 04.08 assignment command to the MS
- *
- * -> Assignment Complete/Assignment Failure
- *  5.) Release the SDCCH, continue signalling on the new link
- */
-static int handle_new_assignment(struct gsm_subscriber_connection *conn, int chan_mode, int full_rate)
-{
-	struct gsm_lchan *new_lchan;
-	enum gsm_chan_t chan_type;
-
-	chan_type = full_rate ? GSM_LCHAN_TCH_F : GSM_LCHAN_TCH_H;
-
-	new_lchan = lchan_alloc(conn_get_bts(conn), chan_type, 0);
-
-	if (!new_lchan) {
-		LOGP(DMSC, LOGL_NOTICE, "No free channel.\n");
-		return -1;
-	}
-
-	/* check if we are on TCH/F and requested TCH/H, but got TCH/F */
-	if (conn->lchan->type == new_lchan->type
-	    && chan_type != new_lchan->type) {
-		LOGP(DHO, LOGL_NOTICE, "%s -> %s Will not re-assign to identical channel type,"
-		     " %s was requested\n",
-		     gsm_lchan_name(conn->lchan), gsm_lchan_name(new_lchan),
-		     gsm_lchant_name(chan_type));
-		lchan_free(new_lchan);
-		return -1;
-	}
-
-	/* copy old data to the new channel */
-	memcpy(&new_lchan->encr, &conn->lchan->encr, sizeof(new_lchan->encr));
-	new_lchan->ms_power = conn->lchan->ms_power;
-	new_lchan->bs_power = conn->lchan->bs_power;
-	new_lchan->rqd_ta = conn->lchan->rqd_ta;
-
-	/* copy new data to it */
-	new_lchan->tch_mode = chan_mode;
-	new_lchan->rsl_cmode = (chan_mode == GSM48_CMODE_SIGN) ?
-					RSL_CMOD_SPD_SIGN : RSL_CMOD_SPD_SPEECH;
-
-	/* handle AMR correctly */
-	if (chan_mode == GSM48_CMODE_SPEECH_AMR)
-		handle_mr_config(conn, new_lchan, full_rate);
-
-	if (rsl_chan_activate_lchan(new_lchan, 0x1, 0) < 0) {
-		LOGP(DHO, LOGL_ERROR, "could not activate channel\n");
-		lchan_free(new_lchan);
-		return -1;
-	}
-
-	/* remember that we have the channel */
-	conn->secondary_lchan = new_lchan;
-	new_lchan->conn = conn;
-
-	rsl_lchan_set_state(new_lchan, LCHAN_S_ACT_REQ);
-	return 0;
-}
 
 static void ho_dtap_cache_add(struct gsm_subscriber_connection *conn, struct msgb *msg,
 			      int link_id, bool allow_sacch)
@@ -294,42 +226,6 @@ static int chan_compat_with_mode(struct gsm_lchan *lchan, int chan_mode, int ful
 	default:
 		return 0;
 	}
-}
-
-/**
- * Send a GSM08.08 Assignment Request. Right now this does not contain the
- * audio codec type or the allowed rates for the config. It is assumed that
- * this is for audio handling only. In case the current channel does not allow
- * the selected mode a new one will be allocated.
- *
- * TODO: Add multirate configuration, make it work for more than audio.
- */
-int gsm0808_assign_req(struct gsm_subscriber_connection *conn, int chan_mode, int full_rate)
-{
-	struct bsc_api *api;
-	api = conn->network->bsc_api;
-
-	if (!chan_compat_with_mode(conn->lchan, chan_mode, full_rate)) {
-		if (handle_new_assignment(conn, chan_mode, full_rate) != 0)
-			goto error;
-	} else {
-		if (chan_mode == GSM48_CMODE_SPEECH_AMR)
-			handle_mr_config(conn, conn->lchan, full_rate);
-
-		LOGP(DMSC, LOGL_NOTICE,
-		     "Sending %s ChanModify for speech: %s on channel %s\n",
-		     gsm_lchan_name(conn->lchan),
-		     get_value_string(gsm48_chan_mode_names, chan_mode),
-		     get_value_string(gsm_chan_t_names, conn->lchan->type));
-		gsm48_lchan_modify(conn->lchan, chan_mode);
-	}
-
-	/* we expect the caller will manage T10 */
-	return 0;
-
-error:
-	api->assign_fail(conn, 0, NULL);
-	return -1;
 }
 
 int gsm0808_page(struct gsm_bts *bts, unsigned int page_group, unsigned int mi_len,

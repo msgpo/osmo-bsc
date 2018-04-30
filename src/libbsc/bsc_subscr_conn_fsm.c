@@ -54,6 +54,8 @@ enum gscon_fsm_states {
 	ST_WAIT_CC,
 	/* active connection */
 	ST_ACTIVE,
+	/* when allocating an lchan, it may be necessary to deactivate PDCH on a dyn ts first. */
+	ST_WAIT_DYN_TS_SWITCHOVER,
 	/* during assignment; waiting for ASS_CMPL */
 	ST_WAIT_ASS_CMPL,
 	/* during assignment; waiting for MODE_MODIFY_ACK */
@@ -386,6 +388,22 @@ static void gscon_fsm_wait_cc(struct osmo_fsm_inst *fi, uint32_t event, void *da
 	}
 }
 
+#define assignment_failed(fi, cause) \
+	_assignment_failed(fi, cause, __FILE__, __LINE__)
+static void _assignment_failed(struct osmo_fsm_inst *fi, enum gsm0808_cause cause,
+			       const char *file, int line)
+{
+	struct gsm_subscriber_connection *conn = fi->priv;
+	struct msgb *resp = NULL;
+
+	LOGPFSMLSRC(fi, LOGL_ERROR, file, line, "Assignment failed: %s\n", gsm0808_cause_name(cause));
+
+	resp = gsm0808_create_assignment_failure(cause, NULL);
+	sigtran_send(conn, resp, fi);
+	if (fi->state != ST_ACTIVE)
+		osmo_fsm_inst_state_chg(fi, ST_ACTIVE, 0, 0);
+}
+
 /* We're on an active subscriber connection, passing DTAP back and forth */
 static void gscon_fsm_active(struct osmo_fsm_inst *fi, uint32_t event, void *data)
 {
@@ -424,8 +442,7 @@ static void gscon_fsm_active(struct osmo_fsm_inst *fi, uint32_t event, void *dat
 			    mgcp_conn_create(conn->network->mgw.client, fi, GSCON_EV_MGW_FAIL_BTS,
 					     GSCON_EV_MGW_CRCX_RESP_BTS, &conn_peer);
 			if (!conn->user_plane.fi_bts) {
-				resp = gsm0808_create_assignment_failure(GSM0808_CAUSE_EQUIPMENT_FAILURE, NULL);
-				sigtran_send(conn, resp, fi);
+				assignment_failed(fi, GSM0808_CAUSE_EQUIPMENT_FAILURE);
 				return;
 			}
 			break;
@@ -439,8 +456,7 @@ static void gscon_fsm_active(struct osmo_fsm_inst *fi, uint32_t event, void *dat
 			rc = gsm0808_assign_req(conn, conn->user_plane.chan_mode,
 						conn->user_plane.full_rate);
 			if (rc != 0) {
-				resp = gsm0808_create_assignment_failure(GSM0808_CAUSE_EQUIPMENT_FAILURE, NULL);
-				sigtran_send(conn, resp, fi);
+				assignment_failed(fi, GSM0808_CAUSE_EQUIPMENT_FAILURE);
 				return;
 			}
 
@@ -455,8 +471,7 @@ static void gscon_fsm_active(struct osmo_fsm_inst *fi, uint32_t event, void *dat
 				 conn->user_plane.full_rate);
 
 			/* The requested channel mode is not supported  */
-			resp = gsm0808_create_assignment_failure(GSM0808_CAUSE_REQ_CODEC_TYPE_OR_CONFIG_NOT_SUPP, NULL);
-			sigtran_send(conn, resp, fi);
+			assignment_failed(fi, GSM0808_CAUSE_REQ_CODEC_TYPE_OR_CONFIG_NOT_SUPP);
 			break;
 		}
 		break;
@@ -494,13 +509,304 @@ static void gscon_fsm_active(struct osmo_fsm_inst *fi, uint32_t event, void *dat
 	}
 }
 
+/*
+ * Start a new assignment and make sure that it is completed within T10 either
+ * positively, negatively or by the timeout.
+ *
+ *  1.) allocate a new lchan
+ *  2.) copy the encryption key and other data from the
+ *      old to the new channel.
+ *  3.) RSL Channel Activate this channel and wait
+ *
+ * -> Signal handler for the LCHAN
+ *  4.) Send GSM 04.08 assignment command to the MS
+ *
+ * -> Assignment Complete/Assignment Failure
+ *  5.) Release the SDCCH, continue signalling on the new link
+ */
+static int handle_new_assignment(struct gsm_subscriber_connection *conn, int chan_mode, int full_rate)
+{
+	struct gsm_lchan *new_lchan;
+	enum gsm_chan_t chan_type;
+
+	chan_type = full_rate ? GSM_LCHAN_TCH_F : GSM_LCHAN_TCH_H;
+
+
+	if (!new_lchan) {
+		LOGP(DMSC, LOGL_NOTICE, "No free channel.\n");
+		return -1;
+	}
+
+	/* copy old data to the new channel */
+	memcpy(&new_lchan->encr, &conn->lchan->encr, sizeof(new_lchan->encr));
+	new_lchan->ms_power = conn->lchan->ms_power;
+	new_lchan->bs_power = conn->lchan->bs_power;
+	new_lchan->rqd_ta = conn->lchan->rqd_ta;
+
+	/* copy new data to it */
+	new_lchan->tch_mode = chan_mode;
+	new_lchan->rsl_cmode = (chan_mode == GSM48_CMODE_SIGN) ?
+					RSL_CMOD_SPD_SIGN : RSL_CMOD_SPD_SPEECH;
+
+	/* handle AMR correctly */
+	if (chan_mode == GSM48_CMODE_SPEECH_AMR)
+		handle_mr_config(conn, new_lchan, full_rate);
+
+
+	if (rsl_chan_activate_lchan(new_lchan, RSL_ACT_INTRA_NORM_ASS, 0) < 0) {
+		LOGP(DHO, LOGL_ERROR, "could not activate channel\n");
+		lchan_free(new_lchan);
+		return -1;
+	}
+
+	/* remember that we have the channel */
+	conn->secondary_lchan = new_lchan;
+	new_lchan->conn = conn;
+
+	rsl_lchan_set_state(new_lchan, LCHAN_S_ACT_REQ);
+	return 0;
+}
+
+static void allocate_lchan_done(struct osmo_fsm_inst *fi, enum gsm0808_cause cause_or_zero)
+{
+	struct gsm_subscriber_connection *conn = fi->priv;
+
+	osmo_fsm_inst_state_chg(fi,
+				conn->lchan_alloc.next_state,
+				conn->lchan_alloc.timeout_secs,
+				conn->lchan_alloc.T);
+
+	if (cause_or_zero) {
+		if (conn->lchan_alloc.new_lchan) {
+			lchan_free(conn->lchan_alloc.new_lchan);
+			conn->lchan_alloc.new_lchan = NULL;
+		}
+		osmo_fsm_inst_dispatch(fi, conn->lchan_alloc.failure_event, &cause);
+	} else
+		osmo_fsm_inst_dispatch(fi, conn->lchan_alloc.success_event, NULL);
+}
+
+static void allocate_lchan_activate(struct osmo_fsm_inst *fi)
+{
+	struct gsm_subscriber_connection *conn = fi->priv;
+	struct gsm_lchan *new_lchan = conn->lchan_alloc.new_lchan;
+	enum gsm48_chan_mode;
+
+	if (!new_lchan) {
+		LOGPFSML(fi, LOGL_ERROR, "cannot activate new lchan: it is NULL\n");
+		allocate_lchan_done(fi, GSM0808_CAUSE_EQUIPMENT_FAILURE);
+	}
+
+	/* copy old data to the new channel */
+	if (conn->lchan) {
+		memcpy(&new_lchan->encr, &conn->lchan->encr, sizeof(new_lchan->encr));
+		new_lchan->ms_power = conn->lchan->ms_power;
+		new_lchan->bs_power = conn->lchan->bs_power;
+		new_lchan->rqd_ta = conn->lchan->rqd_ta;
+	}
+
+	/* copy new data to it */
+	chan_mode = conn->lchan_alloc.chan_mode;
+	new_lchan->tch_mode = chan_mode;
+	new_lchan->rsl_cmode = (chan_mode == GSM48_CMODE_SIGN) ?
+					RSL_CMOD_SPD_SIGN : RSL_CMOD_SPD_SPEECH;
+
+	/* handle AMR correctly */
+	if (chan_mode == GSM48_CMODE_SPEECH_AMR)
+		handle_mr_config(conn, new_lchan, conn->lchan_alloc.full_rate ? 1 : 0);
+
+	if (rsl_chan_activate_lchan(new_lchan, RSL_ACT_INTRA_NORM_ASS, 0) < 0) {
+		LOGP(DHO, LOGL_ERROR, "could not activate channel\n");
+		lchan_free(new_lchan);
+		return -1;
+	}
+
+	/* remember that we have the channel */
+	conn->secondary_lchan = new_lchan;
+	new_lchan->conn = conn;
+
+	rsl_lchan_set_state(new_lchan, LCHAN_S_ACT_REQ);
+
+	allocate_lchan_done(fi, 0);
+}
+
+/* If necessary, release PDCH on dynamic TS. The switch-on of PDCH is handled when a voice call ends, not
+ * here. Return true if a dyn TS is in PDCH mode, i.e. it is still active and we need to release and
+ * wait for the release ack. Return false if the caller can carry on right away.
+ */
+static bool allocate_lchan_disable_dyn_ts_pdch(struct osmo_fsm_inst *fi)
+{
+	struct gsm_subscriber_connection *conn = fi->priv;
+	struct gsm_lchan *lchan = conn->lchan_alloc.new_lchan;
+	bool deactivating_pdch = false;
+	int rc = 0;
+
+	switch (lchan->ts->pchan) {
+	case GSM_PCHAN_TCH_F_PDCH:
+		if (lchan->ts->flags & TS_F_PDCH_ACTIVE) {
+			deactivating_pdch = true;
+			rc = rsl_ipacc_pdch_activate(lchan->ts, 0);
+		}
+		break;
+
+	case GSM_PCHAN_TCH_F_TCH_H_PDCH:
+
+		if (lchan->ts->dyn.pchan_is == GSM_PCHAN_PDCH) {
+			deactivating_pdch = true;
+
+			if (lchan->ts->dyn.pchan_is != lchan->ts->dyn.pchan_want) {
+				LOGPFSML(fi, LOGL_ERROR,
+					 "%s cannot deactivate PDCH, dyn TS already in transition\n",
+					 gsm_lchan_name(lchan));
+				rc = -EINVAL;
+				break;
+			}
+
+			rc = dyn_ts_switchover_start(lchan->ts, pchan_for_lchant(lchan->type));
+		}
+		break;
+
+	default:
+		break;
+	}
+
+	if (!deactivating_pdch)
+		return false;
+
+	if (rc) {
+		allocate_lchan_done(fi, GSM0808_CAUSE_EQUIPMENT_FAILURE);
+		return true;
+	}
+
+	osmo_fsm_inst_state_chg(fi,
+				ST_WAIT_DYN_TS_SWITCHOVER,
+				conn->lchan_alloc.timeout_secs,
+				conn->lchan_alloc.T);
+}
+
+static void allocate_lchan(struct osmo_fsm_inst *fi,
+			   struct gsm_bts *on_bts,
+			   enum gsm48_chan_mode chan_mode,
+			   bool full_rate,
+			   bool differ_from_current_lchan,
+			   enum gscon_fsm_states next_state,
+			   unsigned int timeout_secs, int T,
+			   enum gscon_fsm_event success_event,
+			   enum gscon_fsm_event failure_event)
+{
+	struct gsm_subscriber_connection *conn = fi->priv;
+	struct gsm_lchan *new_lchan;
+	enum gsm0808_cause cause = GSM0808_CAUSE_EQUIPMENT_FAILURE;
+	enum gsm_chan_t chan_type = full_rate ? GSM_LCHAN_TCH_F : GSM_LCHAN_TCH_H;
+
+	if (conn->lchan_alloc.new_lchan) {
+		LOGPFSML(fi, LOGL_ERROR, "lchan allocation already busy on %s, cannot start another\n",
+			 gsm_lchan_name(conn->lchan_alloc.new_lchan));
+		return;
+	}
+
+	conn->lchan_alloc.next_state = next_state;
+	conn->lchan_alloc.timeout_secs = timeout_secs;
+	conn->lchan_alloc.T = T;
+	conn->lchan_alloc.success_event = success_event;
+	conn->lchan_alloc.failure_event = failure_event;
+
+	conn->lchan_alloc.chan_mode = chan_mode;
+	conn->lchan_alloc.full_rate = full_rate;
+
+	switch (chan_mode) {
+	case GSM48_CMODE_SPEECH_V1:
+	case GSM48_CMODE_SPEECH_EFR:
+	case GSM48_CMODE_SPEECH_AMR:
+		break;
+	default:
+		LOGPFSML(fi, LOGL_ERROR, "this code path is not capable of allocating %s\n",
+			 get_value_string(gsm48_chan_mode_names, chan_mode));
+		goto failure;
+	}
+
+	/* About allow_bigger: currently this is only used for TCH, and allow_bigger is about
+	 * allocating SDCCH. So just pass 0. */
+	new_lchan = lchan_alloc(on_bts, chan_type, 0);
+
+	if (!new_lchan) {
+		LOGPFSML(fi, LOGL_NOTICE, "No lchan available for %s\n",
+			 gsm_lchant_name(chan_type));
+		cause = GSM0808_CAUSE_NO_RADIO_RESOURCE_AVAILABLE;
+		goto failure;
+	}
+
+	if (differ_from_current_lchan
+	    && conn->lchan
+	    && conn->lchan->ts->trx->bts == new_lchan->ts->trx->bts
+	    && conn->lchan->type == new_lchan->type) {
+		LOGPFSML(fi, LOGL_NOTICE,
+			 "%s -> %s Will not re-assign to identical channel type,"
+			 " %s was requested\n",
+			 gsm_lchan_name(conn->lchan), gsm_lchan_name(new_lchan),
+			 gsm_lchant_name(chan_type));
+		lchan_free(new_lchan);
+		cause = GSM0808_CAUSE_NO_RADIO_RESOURCE_AVAILABLE;
+		goto failure;
+	}
+
+	conn->lchan_alloc.new_lchan = new_lchan;
+
+	if (allocate_lchan_disable_dyn_ts_pdch(fi))
+		return;
+
+	allocate_lchan_activate(fi);
+	return;
+
+failure:
+	osmo_fsm_inst_state_chg(fi, next_state, timeout_secs, T);
+	osmo_fsm_inst_dispatch(fi, failure_event, &cause);
+}
+
+static void assignment_request(struct osmo_fsm_inst *fi)
+{
+	struct gsm_subscriber_connection *conn = fi->priv;
+	int chan_mode = conn->user_plane.chan_mode;
+	int full_rate = conn->user_plane.full_rate;
+	enum gsm0808_cause cause = GSM0808_CAUSE_EQUIPMENT_FAILURE;
+
+	if (conn->lchan && chan_compat_with_mode(conn->lchan, chan_mode, full_rate)) {
+		/* Already got a compatible lchan, just modify speech */
+		if (chan_mode == GSM48_CMODE_SPEECH_AMR)
+			handle_mr_config(conn, conn->lchan, full_rate);
+
+		LOGPFSML(fi, LOGL_INFO,
+			 "%s: Sending ChanModify for speech: %s\n",
+			 gsm_lchan_name(conn->lchan),
+			 get_value_string(gsm48_chan_mode_names, chan_mode));
+
+		if (gsm48_lchan_modify(conn->lchan, chan_mode)) {
+			LOGPFSML(fi, LOGL_ERROR, "Sending ChanModify failed\n");
+			goto error;
+		}
+		osmo_fsm_inst_state_chg(fi, ST_WAIT_ASS_CMPL, GSM0808_T10_VALUE, GSM0808_T10_TIMER_NR);
+		osmo_fsm_inst_dispatch(fi, GSCON_EV_RR_ASS_COMPL, NULL);
+		return;
+	}
+
+	/* No (suitable) channel available, allocate */
+	allocate_lchan(fi, ST_WAIT_ASS_CMPL, GSM0808_T10_VALUE, GSM0808_T10_TIMER_NR,
+		       GSCON_EV_RR_ASS_FAIL);
+	return;
+
+error:
+	osmo_fsm_inst_state_chg(fi, ST_WAIT_ASS_CMPL, GSM0808_T10_VALUE, GSM0808_T10_TIMER_NR);
+	osmo_fsm_inst_dispatch(fi, GSCON_EV_RR_ASS_FAIL, &cause);
+	return -1;
+}
+
+
 /* Before we may start the channel assignment we need to get an IP/Port for the
  * RTP connection from the MGW */
 static void gscon_fsm_wait_crcx_bts(struct osmo_fsm_inst *fi, uint32_t event, void *data)
 {
 	struct gsm_subscriber_connection *conn = fi->priv;
 	struct mgcp_conn_peer *conn_peer = NULL;
-	struct msgb *resp = NULL;
 	int rc;
 
 	switch (event) {
@@ -510,9 +816,7 @@ static void gscon_fsm_wait_crcx_bts(struct osmo_fsm_inst *fi, uint32_t event, vo
 		/* Check if the MGW has assigned an enpoint to us, otherwise we
 		 * can not proceed. */
 		if (strlen(conn_peer->endpoint) <= 0) {
-			resp = gsm0808_create_assignment_failure(GSM0808_CAUSE_EQUIPMENT_FAILURE, NULL);
-			sigtran_send(conn, resp, fi);
-			osmo_fsm_inst_state_chg(fi, ST_ACTIVE, 0, 0);
+			assignment_failed(fi, GSM0808_CAUSE_EQUIPMENT_FAILURE);
 			return;
 		}
 
@@ -529,15 +833,8 @@ static void gscon_fsm_wait_crcx_bts(struct osmo_fsm_inst *fi, uint32_t event, vo
 		 * then start the channel assignment. */
 		conn->user_plane.rtp_port = conn_peer->port;
 		conn->user_plane.rtp_ip = osmo_ntohl(inet_addr(conn_peer->addr));
-		rc = gsm0808_assign_req(conn, conn->user_plane.chan_mode, conn->user_plane.full_rate);
-		if (rc != 0) {
-			resp = gsm0808_create_assignment_failure(GSM0808_CAUSE_RQSTED_SPEECH_VERSION_UNAVAILABLE, NULL);
-			sigtran_send(conn, resp, fi);
-			osmo_fsm_inst_state_chg(fi, ST_ACTIVE, 0, 0);
-			return;
-		}
 
-		osmo_fsm_inst_state_chg(fi, ST_WAIT_ASS_CMPL, GSM0808_T10_VALUE, GSM0808_T10_TIMER_NR);
+		allocate_lchan(fi, ST_WAIT_ASS_CMPL);
 		break;
 	case GSCON_EV_MO_DTAP:
 		forward_dtap(conn, (struct msgb *)data, fi);
@@ -561,7 +858,6 @@ static void gscon_fsm_wait_ass_cmpl(struct osmo_fsm_inst *fi, uint32_t event, vo
 	struct gsm_lchan *lchan = conn->lchan;
 	struct mgcp_conn_peer conn_peer;
 	struct in_addr addr;
-	struct msgb *resp = NULL;
 	int rc;
 
 	switch (event) {
@@ -586,9 +882,7 @@ static void gscon_fsm_wait_ass_cmpl(struct osmo_fsm_inst *fi, uint32_t event, vo
 			osmo_fsm_inst_state_chg(fi, ST_WAIT_MDCX_BTS, MGCP_MGW_TIMEOUT, MGCP_MGW_TIMEOUT_TIMER_NR);
 			rc = mgcp_conn_modify(conn->user_plane.fi_bts, GSCON_EV_MGW_MDCX_RESP_BTS, &conn_peer);
 			if (rc != 0) {
-				resp = gsm0808_create_assignment_failure(GSM0808_CAUSE_EQUIPMENT_FAILURE, NULL);
-				sigtran_send(conn, resp, fi);
-				osmo_fsm_inst_state_chg(fi, ST_ACTIVE, 0, 0);
+				assignment_failed(fi, GSM0808_CAUSE_EQUIPMENT_FAILURE);
 				return;
 			}
 			break;
@@ -610,9 +904,12 @@ static void gscon_fsm_wait_ass_cmpl(struct osmo_fsm_inst *fi, uint32_t event, vo
 
 		break;
 	case GSCON_EV_RR_ASS_FAIL:
-		resp = gsm0808_create_assignment_failure(GSM0808_CAUSE_RQSTED_TERRESTRIAL_RESOURCE_UNAVAILABLE, NULL);
-		sigtran_send(conn, resp, fi);
-		osmo_fsm_inst_state_chg(fi, ST_ACTIVE, 0, 0);
+		{
+			enum gsm0808_cause cause = GSM0808_CAUSE_RQSTED_TERRESTRIAL_RESOURCE_UNAVAILABLE;
+			if (data)
+				cause = *((enum gsm0808_cause*)data);
+			assignment_failed(fi, cause);
+		}
 		break;
 	case GSCON_EV_MO_DTAP:
 		forward_dtap(conn, (struct msgb *)data, fi);
@@ -635,7 +932,6 @@ static void gscon_fsm_wait_mdcx_bts(struct osmo_fsm_inst *fi, uint32_t event, vo
 	struct gsm_subscriber_connection *conn = fi->priv;
 	struct mgcp_conn_peer conn_peer;
 	struct sockaddr_in *sin = NULL;
-	struct msgb *resp = NULL;
 
 	switch (event) {
 	case GSCON_EV_MGW_MDCX_RESP_BTS:
@@ -658,9 +954,7 @@ static void gscon_fsm_wait_mdcx_bts(struct osmo_fsm_inst *fi, uint32_t event, vo
 		    mgcp_conn_create(conn->network->mgw.client, fi, GSCON_EV_MGW_FAIL_MSC, GSCON_EV_MGW_CRCX_RESP_MSC,
 				     &conn_peer);
 		if (!conn->user_plane.fi_bts) {
-			resp = gsm0808_create_assignment_failure(GSM0808_CAUSE_EQUIPMENT_FAILURE, NULL);
-			sigtran_send(conn, resp, fi);
-			osmo_fsm_inst_state_chg(fi, ST_ACTIVE, 0, 0);
+			assignment_failed(fi, GSM0808_CAUSE_EQUIPMENT_FAILURE);
 			return;
 		}
 

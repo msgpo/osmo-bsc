@@ -1868,7 +1868,7 @@ int abis_nm_set_channel_attr(struct gsm_bts_trx_ts *ts, uint8_t chan_comb)
 	foh = fill_om_fom_hdr(oh, len, NM_MT_SET_CHAN_ATTR, NM_OC_CHANNEL, bts->bts_nr,
 			      ts->trx->nr, ts->nr);
 
-	DEBUGPFOH(DNM, foh, "Set Chan Attr %s\n", gsm_ts_name(ts));
+	DEBUGPFOH(DNM, foh, "Set Chan Attr %s chan_comb=0x%x\n", gsm_ts_name(ts), chan_comb);
 	if (verify_chan_comb(ts, chan_comb, &reason) < 0) {
 		msgb_free(msg);
 		LOGPFOH(DNM, LOGL_ERROR, foh, "Invalid Channel Combination %d on %s. Reason: %s\n",
