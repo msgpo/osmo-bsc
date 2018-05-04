@@ -444,7 +444,6 @@ static void bsc_assign_compl(struct gsm_subscriber_connection *conn, uint8_t rr_
 static void bsc_assign_fail(struct gsm_subscriber_connection *conn,
 			    uint8_t cause, uint8_t *rr_cause)
 {
-	LOGP(DMSC, LOGL_INFO, "Tx MSC ASSIGN FAIL\n");
 	osmo_fsm_inst_dispatch(conn->fi, GSCON_EV_RR_ASS_FAIL, NULL);
 }
 

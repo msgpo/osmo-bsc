@@ -830,14 +830,15 @@ static void handle_chan_ack(struct gsm_subscriber_connection *conn,
 }
 
 static void handle_chan_nack(struct gsm_subscriber_connection *conn,
-			     struct bsc_api *api, struct gsm_lchan *lchan)
+			     struct bsc_api *bsc, struct gsm_lchan *lchan)
 {
 	if (conn->secondary_lchan != lchan)
 		return;
 
-	LOGPLCHAN(lchan, DMSC, LOGL_ERROR, "Channel activation failed. Waiting for timeout now\n");
+	LOGPLCHAN(lchan, DMSC, LOGL_ERROR, "Channel activation failed.\n");
 	conn->secondary_lchan->conn = NULL;
 	conn->secondary_lchan = NULL;
+	bsc->assign_fail(conn, GSM0808_CAUSE_RADIO_INTERFACE_FAILURE, NULL);
 }
 
 static __attribute__((constructor)) void on_dso_load_bsc(void)
