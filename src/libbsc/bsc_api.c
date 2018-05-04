@@ -782,6 +782,7 @@ static int bsc_handle_lchan_signal(unsigned int subsys, unsigned int signal,
 
 	switch (signal) {
 	case S_LCHAN_UNEXPECTED_RELEASE:
+		LOGPLCHAN(lchan, DMSC, LOGL_NOTICE, "S_LCHAN_UNEXPECTED_RELEASE\n");
 		handle_release(lchan->conn, bsc, lchan);
 		break;
 	case S_LCHAN_ACTIVATE_ACK:
@@ -799,6 +800,8 @@ static void handle_release(struct gsm_subscriber_connection *conn,
 			   struct bsc_api *bsc, struct gsm_lchan *lchan)
 {
 	if (conn->secondary_lchan == lchan) {
+		LOGPLCHAN(lchan, DMSC, LOGL_NOTICE,
+			  "lchan release on new lchan, Assignment failed\n");
 		osmo_timer_del(&conn->T10);
 		conn->secondary_lchan = NULL;
 
