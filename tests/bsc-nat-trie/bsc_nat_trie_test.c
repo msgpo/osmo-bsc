@@ -44,7 +44,7 @@ int main(int argc, char **argv)
 
 	printf("Testing the trie\n");
 
-	trie = nat_rewrite_parse(NULL, "prefixes.csv");
+	trie = nat_rewrite_parse(tall_ctx, "prefixes.csv");
 	OSMO_ASSERT(trie);
 
 	/* verify that it has been parsed */
@@ -87,7 +87,7 @@ int main(int argc, char **argv)
 
 	talloc_free(trie);
 
-	trie = nat_rewrite_parse(NULL, "does_not_exist.csv");
+	trie = nat_rewrite_parse(tall_ctx, "does_not_exist.csv");
 	OSMO_ASSERT(!trie);
 
 	printf("Done with the tests.\n");

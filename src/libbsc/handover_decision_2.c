@@ -149,22 +149,47 @@ void hodec2_on_change_congestion_check_interval(struct gsm_network *net, unsigne
 	reinit_congestion_timer(net);
 }
 
-static void conn_penalty_time_add(struct gsm_subscriber_connection *conn, struct gsm_bts *bts,
+static void _conn_penalty_time_add(struct gsm_subscriber_connection *conn,
+				   const void *for_object,
 				   int penalty_time)
 {
+	if (!for_object) {
+		LOGP(DHODEC, LOGL_ERROR, "%s Unable to set Handover-2 penalty timer:"
+		     " no target cell pointer\n",
+		     bsc_subscr_name(conn->bsub));
+		return;
+	}
+
 	if (!conn->hodec2.penalty_timers) {
 		conn->hodec2.penalty_timers = penalty_timers_init(conn);
 		OSMO_ASSERT(conn->hodec2.penalty_timers);
 	}
-	penalty_timers_add(conn->hodec2.penalty_timers, bts, penalty_time);
+
+	penalty_timers_add(conn->hodec2.penalty_timers, for_object, penalty_time);
+}
+
+static void nik_penalty_time_add(struct gsm_subscriber_connection *conn,
+				 struct neighbor_ident_key *nik,
+				 int penalty_time)
+{
+	_conn_penalty_time_add(conn,
+			       neighbor_ident_get(conn->network->neighbor_bss_cells, nik),
+			       penalty_time);
+}
+
+static void bts_penalty_time_add(struct gsm_subscriber_connection *conn,
+				 struct gsm_bts *bts,
+				 int penalty_time)
+{
+	_conn_penalty_time_add(conn, bts, penalty_time);
 }
 
 static unsigned int conn_penalty_time_remaining(struct gsm_subscriber_connection *conn,
-						struct gsm_bts *bts)
+						const void *for_object)
 {
 	if (!conn->hodec2.penalty_timers)
 		return 0;
-	return penalty_timers_remaining(conn->hodec2.penalty_timers, bts);
+	return penalty_timers_remaining(conn->hodec2.penalty_timers, for_object);
 }
 
 /* did we get a RXLEV for a given cell in the given report? Mark matches as MRC_F_PROCESSED. */
@@ -548,7 +573,7 @@ static uint8_t check_requirements(struct gsm_lchan *lchan, struct gsm_bts *bts, 
 
 	/* the maximum number of unsynchonized handovers must no be exceeded */
 	if (current_bts != bts
-	    && bsc_ho_count(bts, true) >= ho_get_hodec2_ho_max(bts->ho)) {
+	    && handover_count(bts, HO_SCOPE_ALL) >= ho_get_hodec2_ho_max(bts->ho)) {
 		LOGPHOLCHANTOBTS(lchan, bts, LOGL_DEBUG,
 				 "not a candidate, number of allowed handovers (%d) would be exceeded\n",
 				 ho_get_hodec2_ho_max(bts->ho));
@@ -689,8 +714,9 @@ static int trigger_handover_or_assignment(struct gsm_lchan *lchan, struct gsm_bt
 				 full_rate ? "TCH/F" : "TCH/H",
 				 ho_reason_name(global_ho_reason));
 
-	return handover_to_neighbor_ident(HODEC2, lchan, bts_ident_key(new_bts),
-					  full_rate? GSM_LCHAN_TCH_F : GSM_LCHAN_TCH_H);
+	handover_start_mo(HODEC2, lchan, bts_ident_key(new_bts),
+			  full_rate? GSM_LCHAN_TCH_F : GSM_LCHAN_TCH_H);
+	return 0;
 }
 
 /* debug collected candidates */
@@ -790,7 +816,7 @@ static void collect_handover_candidate(struct gsm_lchan *lchan, struct neigh_mea
 	struct gsm_bts *bts = lchan->ts->trx->bts;
 	int tchf_count, tchh_count;
 	struct gsm_bts *neighbor_bts;
-	struct gsm0808_cell_id_list2 *neighbor_cil;
+	const struct gsm0808_cell_id_list2 *neighbor_cil;
 	struct neighbor_ident_key ni = {
 		.arfcn = nmp->arfcn,
 		.bsic_kind = BSIC_6BIT,
@@ -1247,11 +1273,11 @@ static void on_measurement_report(struct gsm_meas_rep *mr)
 	    && lchan->rqd_ta > ho_get_hodec2_max_distance(bts->ho)) {
 		global_ho_reason = HO_REASON_MAX_DISTANCE;
 		LOGPHOLCHAN(lchan, LOGL_INFO, "Attempting handover due to high TA\n");
-		/* start penalty timer to prevent comming back too
+		/* start penalty timer to prevent coming back too
 		 * early. it must be started before selecting a better cell,
 		 * so there is no assignment selected, due to running
 		 * penalty timer. */
-		conn_penalty_time_add(lchan->conn, bts, ho_get_hodec2_penalty_max_dist(bts->ho));
+		bts_penalty_time_add(lchan->conn, bts, ho_get_hodec2_penalty_max_dist(bts->ho));
 		find_alternative_lchan(lchan, true);
 		return;
 	}
@@ -1796,50 +1822,58 @@ static void congestion_check_cb(void *arg)
 	reinit_congestion_timer(net);
 }
 
-void on_ho_chan_activ_nack(struct bsc_handover *ho)
+static void on_handover_end(struct handover *ho, enum handover_result result)
 {
-	struct gsm_bts *new_bts = ho->new_lchan->ts->trx->bts;
+	struct gsm_bts *old_bts = NULL;
+	struct gsm_bts *new_bts = NULL;
+	struct gsm_subscriber_connection *conn = ho->conn;
+	int penalty;
 
-	LOGPHO(ho, LOGL_ERROR, "Channel Activate Nack for %s, starting penalty timer\n", ho->inter_cell? "Handover" : "Assignment");
+	/* If all went fine, then there are no penalty timers to set. */
+	if (result == HO_RESULT_OK)
+		return;
 
-	/* if channel failed, wait 10 seconds before allowing to retry handover */
-	conn_penalty_time_add(ho->old_lchan->conn, new_bts, 10); /* FIXME configurable */
-}
+	if (ho->mo.old_lchan)
+		old_bts = ho->mo.old_lchan->ts->trx->bts;
+	if (ho->mt.new_lchan)
+		new_bts = ho->mt.new_lchan->ts->trx->bts;
 
-void on_ho_failure(struct bsc_handover *ho)
-{
-	struct gsm_bts *old_bts = ho->old_lchan->ts->trx->bts;
-	struct gsm_bts *new_bts = ho->new_lchan->ts->trx->bts;
-	struct gsm_subscriber_connection *conn = ho->old_lchan->conn;
+	/* Only interested in handovers within this BSS or going out into another BSS. Incoming handovers
+	 * from another BSS are accounted for in the other BSS. */
+	if (!old_bts)
+		return;
 
-	if (!conn) {
-		LOGPHO(ho, LOGL_ERROR, "HO failure, but no conn");
+	if (conn->hodec2.failures < ho_get_hodec2_retries(old_bts->ho)) {
+		conn->hodec2.failures++;
+		LOGPHO(ho, LOGL_NOTICE, "Failed, allowing handover decision to try again"
+		       " (%d/%d attempts)\n",
+		       conn->hodec2.failures, ho_get_hodec2_retries(old_bts->ho));
 		return;
 	}
 
-	if (conn->hodec2.failures >= ho_get_hodec2_retries(old_bts->ho)) {
-		int penalty = ho->inter_cell
-			? ho_get_hodec2_penalty_failed_ho(old_bts->ho)
-			: ho_get_hodec2_penalty_failed_as(old_bts->ho);
-		LOGPHO(ho, LOGL_NOTICE, "%s failed, starting penalty timer (%d s)\n",
-		       ho->inter_cell ? "Handover" : "Assignment",
-		       penalty);
-		conn->hodec2.failures = 0;
-		conn_penalty_time_add(conn, new_bts, penalty);
-	} else {
-		conn->hodec2.failures++;
-		LOGPHO(ho, LOGL_NOTICE, "%s failed, allowing handover decision to try again"
-		       " (%d/%d attempts)\n",
-		       ho->inter_cell ? "Handover" : "Assignment",
-		       conn->hodec2.failures, ho_get_hodec2_retries(old_bts->ho));
+	switch (ho->scope) {
+	case HO_INTRA_CELL:
+		penalty = ho_get_hodec2_penalty_failed_as(old_bts->ho);
+		break;
+	default:
+		/* TODO: separate penalty for inter-BSC HO? */
+		penalty = ho_get_hodec2_penalty_failed_ho(old_bts->ho);
+		break;
 	}
+
+	LOGPHO(ho, LOGL_NOTICE, "Failed, starting penalty timer (%d s)\n", penalty);
+	conn->hodec2.failures = 0;
+
+	if (new_bts)
+		bts_penalty_time_add(conn, new_bts, penalty);
+	else
+		nik_penalty_time_add(conn, &ho->mo.target_cell, penalty);
 }
 
-struct handover_decision_callbacks hodec2_callbacks = {
+static struct handover_decision_callbacks hodec2_callbacks = {
 	.hodec_id = 2,
 	.on_measurement_report = on_measurement_report,
-	.on_ho_chan_activ_nack = on_ho_chan_activ_nack,
-	.on_ho_failure = on_ho_failure,
+	.on_handover_end = on_handover_end,
 };
 
 void hodec2_init(struct gsm_network *net)

@@ -33,8 +33,8 @@ bool neighbor_ident_key_match(const struct neighbor_ident_key *entry,
 
 int neighbor_ident_add(struct neighbor_ident_list *nil, const struct neighbor_ident_key *key,
 		       const struct gsm0808_cell_id_list2 *val);
-struct gsm0808_cell_id_list2 *neighbor_ident_get(const struct neighbor_ident_list *nil,
-						 const struct neighbor_ident_key *key);
+const struct gsm0808_cell_id_list2 *neighbor_ident_get(const struct neighbor_ident_list *nil,
+						       const struct neighbor_ident_key *key);
 bool neighbor_ident_del(struct neighbor_ident_list *nil, const struct neighbor_ident_key *key);
 void neighbor_ident_clear(struct neighbor_ident_list *nil);
 
@@ -46,3 +46,10 @@ void neighbor_ident_iter(const struct neighbor_ident_list *nil,
 
 void neighbor_ident_vty_init(struct neighbor_ident_list *nil, int parent_node);
 void neighbor_ident_vty_write(const struct neighbor_ident_list *nil, struct vty *vty, const char *indent);
+
+#define NEIGHBOR_IDENT_VTY_KEY_PARAMS "arfcn <0-1023> (bsic|bsic9) (<0-511>|any)"
+#define NEIGHBOR_IDENT_VTY_KEY_DOC \
+	"ARFCN of neighbor cell\n" "ARFCN value\n" \
+	"BSIC of neighbor cell\n" "9-bit BSIC of neighbor cell\n" "BSIC value\n" \
+	"for all BSICs / use any BSIC in this ARFCN\n"
+bool neighbor_ident_vty_parse_key_params(struct vty *vty, const char **argv, struct neighbor_ident_key *key);

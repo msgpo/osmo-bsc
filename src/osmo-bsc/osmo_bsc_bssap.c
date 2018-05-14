@@ -28,6 +28,8 @@
 #include <osmocom/bsc/paging.h>
 #include <osmocom/bsc/gsm_04_08_utils.h>
 #include <osmocom/bsc/bsc_subscr_conn_fsm.h>
+#include <osmocom/bsc/abis_rsl.h>
+#include <osmocom/bsc/handover.h>
 
 #include <osmocom/gsm/protocol/gsm_08_08.h>
 #include <osmocom/gsm/gsm0808.h>
@@ -43,7 +45,7 @@
  * helpers for the assignment command
  */
 
-/* Helper function for match_codec_pref(), looks up a matching permitted speech
+/* Helper function for bsc_msc_match_codec_pref(), looks up a matching permitted speech
  * value for a given msc audio codec pref */
 enum gsm0808_permitted_speech audio_support_to_gsm88(struct gsm_audio_support *audio)
 {
@@ -82,7 +84,7 @@ enum gsm0808_permitted_speech audio_support_to_gsm88(struct gsm_audio_support *a
 	}
 }
 
-/* Helper function for match_codec_pref(), looks up a matching chan mode for
+/* Helper function for bsc_msc_match_codec_pref(), looks up a matching chan mode for
  * a given permitted speech value */
 enum gsm48_chan_mode gsm88_to_chan_mode(enum gsm0808_permitted_speech speech)
 {
@@ -106,7 +108,7 @@ enum gsm48_chan_mode gsm88_to_chan_mode(enum gsm0808_permitted_speech speech)
 	}
 }
 
-/* Helper function for match_codec_pref(), tests if a given audio support
+/* Helper function for bsc_msc_match_codec_pref(), tests if a given audio support
  * matches one of the permitted speech settings of the channel type element.
  * The matched permitted speech value is then also compared against the
  * speech codec list. (optional, only relevant for AoIP) */
@@ -161,10 +163,10 @@ static bool test_codec_pref(const struct gsm0808_channel_type *ct,
  *  \param[in] scl GSM 08.08 speech codec list
  *  \param[in] msc MSC data [for configuration]
  *  \returns 0 on success, -1 in case no match was found */
-static int match_codec_pref(int *full_rate, enum gsm48_chan_mode *chan_mode,
-			    const struct gsm0808_channel_type *ct,
-			    const struct gsm0808_speech_codec_list *scl,
-			    const struct bsc_msc_data *msc)
+int bsc_msc_match_codec_pref(int *full_rate, enum gsm48_chan_mode *chan_mode,
+			     const struct gsm0808_channel_type *ct,
+			     const struct gsm0808_speech_codec_list *scl,
+			     const struct bsc_msc_data *msc)
 {
 	unsigned int i;
 	uint8_t perm_spch;
@@ -671,7 +673,7 @@ static int bssmap_handle_assignm_req(struct gsm_subscriber_connection *conn,
 
 	if (!conn) {
 		LOGP(DMSC, LOGL_ERROR,
-		     "No lchan/msc_data in cipher mode command.\n");
+		     "No lchan/msc_data in Assignment Request\n");
 		return -1;
 	}
 
@@ -766,7 +768,7 @@ static int bssmap_handle_assignm_req(struct gsm_subscriber_connection *conn,
 
 		/* Match codec information from the assignment command against the
 		 * local preferences of the BSC */
-		rc = match_codec_pref(&full_rate, &chan_mode, &ct, scl_ptr, msc);
+		rc = bsc_msc_match_codec_pref(&full_rate, &chan_mode, &ct, scl_ptr, msc);
 		if (rc < 0) {
 			LOGP(DMSC, LOGL_ERROR, "No supported audio type found for channel_type ="
 			     " { ch_indctr=0x%x, ch_rate_type=0x%x, perm_spch=[ %s] }\n",
@@ -820,6 +822,49 @@ reject:
 
 	osmo_fsm_inst_dispatch(conn->fi, GSCON_EV_TX_SCCP, resp);
 	return -1;
+}
+
+/* Handle Handover Command message, part of inter-BSC handover:
+ * This BSS sent a Handover Required message.
+ * The MSC contacts the remote BSS and receives from it an RR Handover Command; this BSSMAP Handover
+ * Command passes the RR Handover Command over to us and it's our job to forward to the MS.
+ *
+ * See 3GPP TS 48.008 §3.2.1.11
+ */
+static int bssmap_handle_handover_cmd(struct gsm_subscriber_connection *conn,
+				      struct msgb *msg, unsigned int length)
+{
+	struct tlv_parsed tp;
+	const uint8_t *l3_info;
+	uint8_t l3_info_len;
+
+	tlv_parse(&tp, gsm0808_att_tlvdef(), msg->l4h + 1, length - 1, 0, 0);
+
+	/* Check for channel type element, if its missing, immediately reject */
+	if (!TLVP_PRESENT(&tp, GSM0808_IE_LAYER_3_INFORMATION)) {
+		LOGP(DMSC, LOGL_ERROR, "Mandatory IE not present: Layer 3 Information\n");
+		goto reject;
+	}
+
+	l3_info = TLVP_VAL(&tp, GSM0808_IE_LAYER_3_INFORMATION);
+	l3_info_len = TLVP_LEN(&tp, GSM0808_IE_LAYER_3_INFORMATION);
+
+	LOGP(DRSL, LOGL_DEBUG, "%s Handover Command: forwarding Layer 3 Info: %s\n",
+	     bsc_subscr_name(conn->bsub), osmo_hexdump(l3_info, l3_info_len));
+
+	if (rsl_forward_layer3_info(conn->lchan, l3_info, l3_info_len)) {
+		LOGP(DRSL, LOGL_ERROR, "%s Handover Command: Failed to forward Layer 3 Info\n",
+		     bsc_subscr_name(conn->bsub));
+		goto reject;
+	}
+
+	osmo_fsm_inst_dispatch(conn->fi, GSCON_EV_A_HO_COMMAND, NULL);
+	return 0;
+reject:
+	/* No "Handover Command Reject" message or similar is specified, so we cannot reply in case of
+	 * failure. Or is there?? */
+	handover_end(conn->ho, HO_RESULT_ERROR);
+	return -EINVAL;
 }
 
 static int bssmap_rcvmsg_udt(struct bsc_msc_data *msc,
@@ -876,6 +921,9 @@ static int bssmap_rcvmsg_dt1(struct gsm_subscriber_connection *conn,
 		break;
 	case BSS_MAP_MSG_ASSIGMENT_RQST:
 		ret = bssmap_handle_assignm_req(conn, msg, length);
+		break;
+	case BSS_MAP_MSG_HANDOVER_CMD:
+		ret = bssmap_handle_handover_cmd(conn, msg, length);
 		break;
 	default:
 		LOGP(DMSC, LOGL_NOTICE, "Unimplemented msg type: %s\n",
@@ -991,88 +1039,6 @@ int bsc_handle_dt(struct gsm_subscriber_connection *conn,
 	return -1;
 }
 
-static uint8_t gsm0808_current_channel_type_1(enum gsm_chan_t type)
-{
-	switch (type) {
-	default:
-		return 0;
-	case GSM_LCHAN_SDCCH:
-		return 0x01;
-	case GSM_LCHAN_TCH_F:
-		return 0x18;
-	case GSM_LCHAN_TCH_H:
-		return 0x19;
-	}
-}
-
-static enum gsm0808_permitted_speech chan_to_perm_speech(enum gsm_chan_t type, enum gsm48_chan_mode mode)
-{
-	switch (mode) {
-	case GSM48_CMODE_SPEECH_V1:
-		switch (type) {
-		case GSM_LCHAN_TCH_F:
-			return GSM0808_PERM_FR1;
-		case GSM_LCHAN_TCH_H:
-			return GSM0808_PERM_HR1;
-		default:
-			return 0;
-		}
-	case GSM48_CMODE_SPEECH_EFR:
-		switch (type) {
-		case GSM_LCHAN_TCH_F:
-			return GSM0808_PERM_FR2;
-		case GSM_LCHAN_TCH_H:
-			return GSM0808_PERM_HR2;
-		default:
-			return 0;
-		}
-	case GSM48_CMODE_SPEECH_AMR:
-		switch (type) {
-		case GSM_LCHAN_TCH_F:
-			return GSM0808_PERM_HR3;
-		case GSM_LCHAN_TCH_H:
-			return GSM0808_PERM_HR3;
-		default:
-			return 0;
-		}
-	default:
-		return 0;
-	}
-}
-
-int bsc_handover_inter_bsc_start(enum hodec_id from_hodec_id, struct gsm_lchan *old_lchan,
-				 struct gsm0808_cell_id_list2 *target_cells,
-				 enum gsm_chan_t new_lchan_type)
-{
-	struct gsm0808_handover_required params = {
-		.cause = GSM0808_CAUSE_BETTER_CELL,
-		.cil = *target_cells,
-		.current_channel_type_1_present = true,
-		.current_channel_type_1 = gsm0808_current_channel_type_1(old_lchan->type),
-	};
-
-	LOGP(DHO, LOGL_DEBUG, "%s Starting Inter-BSC Handover (from_hodec_id=%d)\n",
-	     gsm_lchan_name(old_lchan), from_hodec_id);
-
-	switch (old_lchan->type) {
-	case GSM_LCHAN_TCH_F:
-	case GSM_LCHAN_TCH_H:
-		params.speech_version_used_present = true;
-		params.speech_version_used = chan_to_perm_speech(old_lchan->type, old_lchan->tch_mode);
-		if (!params.speech_version_used) {
-			LOGP(DHO, LOGL_ERROR,
-			     "%s Cannot encode Speech Version (Used) for HANDOVER REQUIRED message\n",
-			     gsm_lchant_name(old_lchan->type));
-			return -EINVAL;
-		}
-		break;
-	default:
-		break;
-	}
-
-	return bsc_send_handover_required(old_lchan, &params);
-}
-
 int bsc_send_handover_required(struct gsm_lchan *lchan, const struct gsm0808_handover_required *params)
 {
 	struct msgb *msg;
@@ -1082,4 +1048,34 @@ int bsc_send_handover_required(struct gsm_lchan *lchan, const struct gsm0808_han
 		return -ENOMEM;
 
 	return osmo_bsc_sigtran_send(lchan->conn, msg);
+}
+
+/* Inter-BSC MT HO, new BSS has allocated a channel and sends the RR Handover Command via MSC to the old
+ * BSS, encapsulated in a BSSMAP Handover Request Acknowledge. */
+int bsc_send_handover_request_ack(struct handover *ho, struct msgb *rr_ho_command)
+{
+	struct msgb *msg;
+	struct gsm_lchan *new_lchan = ho->mt.new_lchan;
+
+	msg = gsm0808_create_handover_request_ack(rr_ho_command->data, rr_ho_command->len,
+						  osmo_chosen_channel(new_lchan->type,
+								      new_lchan->tch_mode),
+						  new_lchan->encr.alg_id,
+						  chan_to_perm_speech(new_lchan->type,
+								      new_lchan->tch_mode));
+	msgb_free(rr_ho_command);
+	if (!msg)
+		return -ENOMEM;
+	return osmo_bsc_sigtran_send(ho->conn, msg);
+}
+
+int bsc_send_handover_detected(struct gsm_subscriber_connection *conn)
+{
+	struct msgb *msg;
+	struct gsm0808_handover_detected params = {};
+	msg = gsm0808_create_handover_detected(&params);
+	if (!msg)
+		return -ENOMEM;
+
+	return osmo_bsc_sigtran_send(conn, msg);
 }

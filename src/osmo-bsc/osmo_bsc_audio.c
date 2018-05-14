@@ -31,6 +31,7 @@
 #include <osmocom/bsc/osmo_bsc_sigtran.h>
 #include <osmocom/bsc/bsc_subscr_conn_fsm.h>
 #include <osmocom/bsc/bsc_subscriber.h>
+#include <osmocom/bsc/handover.h>
 
 #include <arpa/inet.h>
 

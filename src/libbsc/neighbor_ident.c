@@ -201,8 +201,8 @@ int neighbor_ident_add(struct neighbor_ident_list *nil, const struct neighbor_id
 
 /*! Find cell identity for given ARFCN and BSIC, as previously added by neighbor_ident_add().
  */
-struct gsm0808_cell_id_list2 *neighbor_ident_get(const struct neighbor_ident_list *nil,
-						 const struct neighbor_ident_key *key)
+const struct gsm0808_cell_id_list2 *neighbor_ident_get(const struct neighbor_ident_list *nil,
+						       const struct neighbor_ident_key *key)
 {
 	struct neighbor_ident *ni;
 	if (!nil)

@@ -1595,8 +1595,3 @@ void bsc_nat_send_mgcp_to_msc(struct bsc_nat *nat, struct msgb *msg)
 }
 
 struct gsm_subscriber_connection *bsc_subscr_con_allocate(struct gsm_network *network) { return NULL; }
-
-int bsc_handover_inter_bsc_start(enum hodec_id from_hodec_id, struct gsm_lchan *old_lchan,
-				 struct gsm0808_cell_id_list2 *target_cells,
-				 enum gsm_chan_t new_lchan_type)
-{ OSMO_ASSERT(0); }

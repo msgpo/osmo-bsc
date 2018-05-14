@@ -293,8 +293,7 @@ int gsm48_send_rr_ciph_mode(struct gsm_lchan *lchan, int want_imeisv)
 	return rsl_encryption_cmd(msg);
 }
 
-static void gsm48_cell_desc(struct gsm48_cell_desc *cd,
-			    const struct gsm_bts *bts)
+void gsm48_cell_desc(struct gsm48_cell_desc *cd, const struct gsm_bts *bts)
 {
 	cd->ncc = (bts->bsic >> 3 & 0x7);
 	cd->bcc = (bts->bsic & 0x7);
@@ -370,15 +369,13 @@ int gsm48_multirate_config(uint8_t *lv, const struct amr_multirate_conf *mr, con
 #define GSM48_HOCMD_CCHDESC_LEN	16
 
 /* Chapter 9.1.15: Handover Command */
-int gsm48_send_ho_cmd(struct gsm_lchan *old_lchan, struct gsm_lchan *new_lchan,
-		      uint8_t power_command, uint8_t ho_ref)
+struct msgb *gsm48_make_ho_cmd(struct gsm_lchan *new_lchan, uint8_t power_command, uint8_t ho_ref)
 {
 	struct msgb *msg = gsm48_msgb_alloc_name("GSM 04.08 HO CMD");
 	struct gsm48_hdr *gh = (struct gsm48_hdr *) msgb_put(msg, sizeof(*gh));
 	struct gsm48_ho_cmd *ho =
 		(struct gsm48_ho_cmd *) msgb_put(msg, sizeof(*ho));
 
-	msg->lchan = old_lchan;
 	gh->proto_discr = GSM48_PDISC_RR;
 	gh->msg_type = GSM48_MT_RR_HANDO_CMD;
 
@@ -413,6 +410,16 @@ int gsm48_send_ho_cmd(struct gsm_lchan *old_lchan, struct gsm_lchan *new_lchan,
 		msgb_tlv_put(msg, GSM48_IE_MUL_RATE_CFG, new_lchan->mr_ms_lv[0],
 			new_lchan->mr_ms_lv + 1);
 
+	return msg;
+}
+
+int gsm48_send_ho_cmd(struct gsm_lchan *old_lchan, struct gsm_lchan *new_lchan,
+		      uint8_t power_command, uint8_t ho_ref)
+{
+	struct msgb *msg = gsm48_make_ho_cmd(new_lchan, power_command, ho_ref);
+	if (!msg)
+		return -EINVAL;
+	msg->lchan = old_lchan;
 	return gsm48_sendmsg(msg);
 }
 

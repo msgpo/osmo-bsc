@@ -124,8 +124,3 @@ void ipaccess_bts_handle_ccm() {}
 struct gsm_subscriber_connection *bsc_subscr_con_allocate(struct gsm_network *network) { return NULL; }
 
 struct tlv_definition nm_att_tlvdef;
-
-int bsc_handover_inter_bsc_start(enum hodec_id from_hodec_id, struct gsm_lchan *old_lchan,
-				 struct gsm0808_cell_id_list2 *target_cells,
-				 enum gsm_chan_t new_lchan_type)
-{ OSMO_ASSERT(0); }

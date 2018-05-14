@@ -704,8 +704,10 @@ int gsm0808_cipher_mode(struct gsm_subscriber_connection *conn, int cipher,
  */
 int gsm0808_clear(struct gsm_subscriber_connection *conn)
 {
-	if (conn->ho)
-		bsc_clear_handover(conn, 1);
+	if (conn->ho) {
+		handover_end(conn->ho, HO_RESULT_CONN_RELEASE);
+		OSMO_ASSERT(!conn->ho);
+	}
 
 	if (conn->secondary_lchan)
 		lchan_release(conn->secondary_lchan, 0, RSL_REL_LOCAL_END);
@@ -810,6 +812,9 @@ static void handle_release(struct gsm_subscriber_connection *conn,
 				 NULL);
 	}
 
+	if (conn->ho)
+		handover_end(conn->ho, HO_RESULT_CONN_RELEASE);
+
 	/* clear the connection now */
 	if (bsc->clear_request)
 		bsc->clear_request(conn, 0);
@@ -817,8 +822,7 @@ static void handle_release(struct gsm_subscriber_connection *conn,
 	/* now give up all channels */
 	if (conn->lchan == lchan)
 		conn->lchan = NULL;
-	if (conn->ho && conn->ho->new_lchan == lchan)
-		bsc_clear_handover(conn, 0);
+
 	lchan->conn = NULL;
 }
 

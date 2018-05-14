@@ -1550,8 +1550,6 @@ DEFUN(show_subscr_conn,
 
 static int trigger_ho_or_as(struct vty *vty, struct gsm_lchan *from_lchan, struct gsm_bts *to_bts)
 {
-	int rc;
-
 	if (!to_bts || from_lchan->ts->trx->bts == to_bts) {
 		LOGP(DHO, LOGL_NOTICE, "%s Manually triggering Assignment from VTY\n",
 		     gsm_lchan_name(from_lchan));
@@ -1559,12 +1557,7 @@ static int trigger_ho_or_as(struct vty *vty, struct gsm_lchan *from_lchan, struc
 	} else
 		LOGP(DHO, LOGL_NOTICE, "%s (ARFCN %u) --> BTS %u Manually triggering Handover from VTY\n",
 		     gsm_lchan_name(from_lchan), from_lchan->ts->trx->arfcn, to_bts->nr);
-	rc = bsc_handover_start(HODEC_NONE, from_lchan, to_bts, from_lchan->type);
-	if (rc) {
-		vty_out(vty, "bsc_handover_start() returned %d=%s%s", rc,
-			strerror(-rc), VTY_NEWLINE);
-		return CMD_WARNING;
-	}
+	handover_start_mo(HODEC_NONE, from_lchan, bts_ident_key(to_bts), from_lchan->type);
 	return CMD_SUCCESS;
 }
 
@@ -1620,8 +1613,6 @@ static int ho_or_as(struct vty *vty, const char *argv[], int argc)
 
 #define MANUAL_HANDOVER_STR "Manually trigger handover (for debugging)\n"
 #define MANUAL_ASSIGNMENT_STR "Manually trigger assignment (for debugging)\n"
-#define HANDOVER_EXTERNAL_STR \
-	"Inter-BSC Handover, i.e. signal the MSC to perform handover to a cell not connected to this BSC.\n"
 
 DEFUN(handover_subscr_conn,
       handover_subscr_conn_cmd,
@@ -1788,37 +1779,27 @@ DEFUN(handover_ext_cgi,
 }
 #endif
 
-DEFUN(handover_any_ext_lac,
-      handover_any_ext_lac_cmd,
-      "handover external any to lac <0-65535> [<0-65535>] [<0-65535>]",
+DEFUN(handover_any_to_arfcn_bsic, handover_any_to_arfcn_bsic_cmd,
+      "handover any to " NEIGHBOR_IDENT_VTY_KEY_PARAMS,
       MANUAL_HANDOVER_STR
-      HANDOVER_EXTERNAL_STR
-      "Pick any actively used TCH/F or TCH/H lchan to handover to external cell."
+      "Pick any actively used TCH/F or TCH/H lchan to handover to another cell."
       " This is likely to fail outside of a lab setup where you are certain that"
-      " all MS are able to see all external cells.\n"
+      " all MS are able to see the target cell.\n"
       "'to'\n"
-      "Identify handover target cell by LAC\n"
-      "Location Area Code\n"
-      "Location Area Code (second entry in Cell Identifier List)\n"
-      "Location Area Code (third entry in Cell Identifier List)\n")
+      NEIGHBOR_IDENT_VTY_KEY_DOC)
 {
 	struct gsm_lchan *from_lchan;
-	struct gsm0808_cell_id_list2 cil = {
-		.id_discr = CELL_IDENT_LAC,
-		.id_list_len = argc,
-	};
-	int i;
+	struct neighbor_ident_key nik;
+
+	if (!neighbor_ident_vty_parse_key_params(vty, argv, &nik))
+		return CMD_WARNING;
 
 	from_lchan = find_used_voice_lchan(vty);
 	if (!from_lchan)
 		return CMD_WARNING;
 
-	for (i = 0; i < argc; i++)
-		cil.id_list[i].lac = atoi(argv[i]);
-
-	bsc_handover_inter_bsc_start(HODEC_NONE, from_lchan, &cil, from_lchan->type);
-
-	return CMD_WARNING;
+	handover_start_mo(HODEC_NONE, from_lchan, &nik, from_lchan->type);
+	return CMD_SUCCESS;
 }
 
 static void paging_dump_vty(struct vty *vty, struct gsm_paging_request *pag)
@@ -4901,7 +4882,7 @@ int bsc_vty_init(struct gsm_network *network)
 
 	install_element(ENABLE_NODE, &handover_any_cmd);
 	install_element(ENABLE_NODE, &assignment_any_cmd);
-	install_element(ENABLE_NODE, &handover_any_ext_lac_cmd);
+	install_element(ENABLE_NODE, &handover_any_to_arfcn_bsic_cmd);
 
 	logging_vty_add_cmds(NULL);
 	osmo_talloc_vty_add_cmds();

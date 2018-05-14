@@ -31,7 +31,9 @@
 
 struct neighbor_ident_list *g_nil = NULL;
 
-bool parse_key(struct vty *vty, const char **argv, struct neighbor_ident_key *key)
+/* Parse VTY parameters matching NEIGHBOR_IDENT_VTY_KEY_PARAMS. Pass a pointer so that argv[0] is the
+ * ARFCN value followed by the BSIC keyword and value. */
+bool neighbor_ident_vty_parse_key_params(struct vty *vty, const char **argv, struct neighbor_ident_key *key)
 {
 	*key = (struct neighbor_ident_key){
 		.arfcn = atoi(argv[0]),
@@ -58,7 +60,7 @@ int add(struct vty *vty, const char **argv, struct gsm0808_cell_id_list2 *cil)
 	int rc;
 	struct neighbor_ident_key key;
 	
-	if (!parse_key(vty, argv, &key))
+	if (!neighbor_ident_vty_parse_key_params(vty, argv, &key))
 		return CMD_WARNING;
 
 	rc = neighbor_ident_add(g_nil, &key, cil);
@@ -88,14 +90,12 @@ int add(struct vty *vty, const char **argv, struct gsm0808_cell_id_list2 *cil)
 }
 
 #define NEIGH_BSS_CELL_CMD \
-		"neighbor-bss-cell arfcn <0-1023> (bsic|bsic9) (<0-511>|any)"
+		"neighbor-bss-cell " NEIGHBOR_IDENT_VTY_KEY_PARAMS
 #define NEIGH_BSS_CELL_ADD_CMD \
 		NEIGH_BSS_CELL_CMD " add "
 #define NEIGH_BSS_CELL_CMD_DOC \
 		"Neighboring BSS cell list\n" \
-		"ARFCN of neighbor cell\n" "ARFCN value\n" \
-		"BSIC of neighbor cell\n" "9-bit BSIC of neighbor cell\n" "BSIC value\n" \
-		"use the same identifier list for all BSIC in this ARFCN\n"
+		NEIGHBOR_IDENT_VTY_KEY_DOC
 #define NEIGH_BSS_CELL_ADD_CMD_DOC \
 		NEIGH_BSS_CELL_CMD_DOC \
 		"Add identification of cell in a neighboring BSS\n"
@@ -136,7 +136,7 @@ DEFUN(cfg_neighbor_bss_del, cfg_neighbor_bss_del_cmd,
 {
 	struct neighbor_ident_key key;
 
-	if (!parse_key(vty, argv, &key))
+	if (!neighbor_ident_vty_parse_key_params(vty, argv, &key))
 		return CMD_WARNING;
 
 	if (!neighbor_ident_del(g_nil, &key)) {
@@ -213,13 +213,13 @@ DEFUN(cfg_neighbor_bss_resolve, cfg_neighbor_bss_resolve_cmd,
       "Query which Cell Identifier List would be used for this ARFCN/BSIC\n")
 {
 	struct neighbor_ident_key key;
-	struct gsm0808_cell_id_list2 *res;
+	const struct gsm0808_cell_id_list2 *res;
 	struct write_neighbor_ident_entry_data d = {
 		.vty = vty,
 		.indent = "% ",
 	};
 
-	if (!parse_key(vty, argv, &key))
+	if (!neighbor_ident_vty_parse_key_params(vty, argv, &key))
 		return CMD_WARNING;
 
 	res = neighbor_ident_get(g_nil, &key);
