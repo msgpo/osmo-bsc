@@ -341,41 +341,6 @@ int gsm48_parse_meas_rep(struct gsm_meas_rep *rep, struct msgb *msg)
 	return 0;
 }
 
-/* 9.2.5 CM service accept */
-int gsm48_tx_mm_serv_ack(struct gsm_subscriber_connection *conn)
-{
-	struct msgb *msg = gsm48_msgb_alloc_name("GSM 04.08 SERV ACK");
-	struct gsm48_hdr *gh = (struct gsm48_hdr *) msgb_put(msg, sizeof(*gh));
-
-	msg->lchan = conn->lchan;
-
-	gh->proto_discr = GSM48_PDISC_MM;
-	gh->msg_type = GSM48_MT_MM_CM_SERV_ACC;
-
-	DEBUGP(DMM, "-> CM SERVICE ACK\n");
-
-	gscon_submit_rsl_dtap(conn, msg, 0, 0);
-	return 0;
-}
-
-/* 9.2.6 CM service reject */
-int gsm48_tx_mm_serv_rej(struct gsm_subscriber_connection *conn,
-				enum gsm48_reject_value value)
-{
-	struct msgb *msg;
-
-	msg = gsm48_create_mm_serv_rej(value);
-	if (!msg) {
-		LOGP(DMM, LOGL_ERROR, "Failed to allocate CM Service Reject.\n");
-		return -1;
-	}
-
-	DEBUGP(DMM, "-> CM SERVICE Reject cause: %d\n", value);
-
-	gscon_submit_rsl_dtap(conn, msg, 0, 0);
-	return 0;
-}
-
 struct msgb *gsm48_create_mm_serv_rej(enum gsm48_reject_value value)
 {
 	struct msgb *msg;

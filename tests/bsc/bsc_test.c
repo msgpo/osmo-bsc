@@ -252,3 +252,5 @@ void bsc_mr_config(struct gsm_subscriber_connection *conn, struct gsm_lchan *lch
 void gscon_submit_rsl_dtap(struct gsm_subscriber_connection *conn,
 			   struct msgb *msg, int link_id, int allow_sacch) {}
 void gscon_dtap_cache_flush(struct gsm_subscriber_connection *conn, int send) {}
+void ts_fsm_alloc(struct gsm_bts_trx_ts *ts) {}
+void lchan_activate(struct gsm_lchan *lchan, void *info) {}

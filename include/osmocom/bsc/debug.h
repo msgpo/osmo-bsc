@@ -6,6 +6,8 @@
 #define DEBUG
 #include <osmocom/core/logging.h>
 
+#define LOG_ADD_NEWLINE(fmt) ((!fmt || !*fmt || fmt[strlen(fmt)-1] != '\n') ? "\n" : "")
+
 /* Debug Areas of the code */
 enum {
 	DRLL,

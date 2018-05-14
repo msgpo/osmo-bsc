@@ -57,4 +57,7 @@ void neighbor_ident_vty_write(struct vty *vty, const char *indent, struct gsm_bt
 	"ARFCN of neighbor cell\n" "ARFCN value\n" \
 	"BSIC of neighbor cell\n" "9-bit BSIC of neighbor cell\n" "BSIC value\n" \
 	"for all BSICs / use any BSIC in this ARFCN\n"
-bool neighbor_ident_vty_parse_key_params(struct vty *vty, const char **argv, struct neighbor_ident_key *key);
+bool neighbor_ident_vty_parse_key_params(struct vty *vty, const char **argv,
+					 struct neighbor_ident_key *key);
+bool neighbor_ident_bts_parse_key_params(struct vty *vty, struct gsm_bts *bts, const char **argv,
+					 struct neighbor_ident_key *key);
