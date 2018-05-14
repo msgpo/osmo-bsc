@@ -32,6 +32,8 @@
 #include <osmocom/bsc/bsc_subscr_conn_fsm.h>
 #include <osmocom/bsc/osmo_bsc.h>
 #include <osmocom/bsc/penalty_timers.h>
+#include <osmocom/bsc/gsm_04_08_utils.h>
+#include <osmocom/bsc/abis_rsl.h>
 #include <osmocom/mgcp_client/mgcp_client_fsm.h>
 #include <osmocom/core/byteswap.h>
 
@@ -70,8 +72,10 @@ enum gscon_fsm_states {
 	ST_WAIT_CRCX_MSC,
 
 /* MT (inbound) handover */
+	/* Wait for new lchan to be activated */
+	ST_WAIT_HO_CHAN_ACT,
 	/* Wait for Handover Access from MS/BTS */
-	ST_WAIT_MT_HO_ACC,
+	ST_WAIT_MT_HO_RR_ACCEPT,
 	/* Wait for RR Handover Complete from MS/BTS */
 	ST_WAIT_MT_HO_COMPL,
 
@@ -95,7 +99,6 @@ static const struct value_string gscon_fsm_event_names[] = {
 	{GSCON_EV_A_ASSIGNMENT_CMD, "ASSIGNMENT_CMD"},
 	{GSCON_EV_A_CLEAR_CMD, "CLEAR_CMD"},
 	{GSCON_EV_A_DISC_IND, "DISCONNET.ind"},
-	{GSCON_EV_A_HO_REQ, "HANDOVER_REQUEST"},
 
 	{GSCON_EV_RR_ASS_COMPL, "RR_ASSIGN_COMPL"},
 	{GSCON_EV_RR_ASS_FAIL, "RR_ASSIGN_FAIL"},
@@ -115,9 +118,16 @@ static const struct value_string gscon_fsm_event_names[] = {
 	{GSCON_EV_MGW_CRCX_RESP_MSC, "MGW_CRCX_RESPONSE_MSC"},
 
 	{GSCON_EV_HO_START, "HO_START"},
-	{GSCON_EV_HO_TIMEOUT, "HO_TIMEOUT"},
-	{GSCON_EV_HO_FAIL, "HO_FAIL"},
+	{GSCON_EV_HO_END, "HO_END"},
+
+	{GSCON_EV_HO_CHAN_ACTIV_ACK, "HO_CHAN_ACTIV_ACK"},
+	{GSCON_EV_HO_DETECT, "HO_DETECT"},
 	{GSCON_EV_HO_COMPL, "HO_COMPL"},
+
+	{GSCON_EV_INTER_BSC_HO_MO_START, "INTER_BSC_HO_MO_START"},
+	{GSCON_EV_A_HO_COMMAND, "A_HO_COMMAND"},
+	{GSCON_EV_A_HO_REQUEST, "HANDOVER_REQUEST"},
+	{GSCON_EV_RR_HO_ACCEPT, "RR_HO_ACCEPT"},
 
 	{0, NULL}
 };
@@ -254,6 +264,61 @@ static void toss_mgcp_conn(struct gsm_subscriber_connection *conn, struct osmo_f
 	}
 }
 
+static void handle_bssap_n_connect(struct osmo_fsm_inst *fi, struct osmo_scu_prim *scu_prim)
+{
+	struct msgb *msg = scu_prim->oph.msg;
+	struct bssmap_header *bs;
+	uint8_t bssmap_type;
+
+	msg->l3h = msgb_l2(msg);
+	if (!msgb_l3(msg)) {
+		LOGPFSML(fi, LOGL_ERROR, "internal error: no l3 in msg\n");
+		goto refuse;
+	}
+
+	if (msgb_l3len(msg) < sizeof(*bs)) {
+		LOGPFSML(fi, LOGL_NOTICE, "message too short for BSSMAP header (%u < %zu)\n",
+			 msgb_l3len(msg), sizeof(*bs));
+		goto refuse;
+	}
+
+	bs = (struct bssmap_header*)msgb_l3(msg);
+	if (msgb_l3len(msg) < (bs->length + sizeof(*bs))) {
+		LOGPFSML(fi, LOGL_NOTICE,
+			 "message too short for length indicated in BSSMAP header (%u < %u)\n",
+			 msgb_l3len(msg), bs->length);
+		goto refuse;
+	}
+
+	switch (bs->type) {
+	case BSSAP_MSG_BSS_MANAGEMENT:
+		break;
+	default:
+		LOGPFSML(fi, LOGL_NOTICE,
+			 "message type not allowed for N-CONNECT: %s\n", gsm0808_bssap_name(bs->type));
+		goto refuse;
+	}
+
+	msg->l4h = &msg->l3h[sizeof(*bs)];
+	bssmap_type = msg->l4h[0];
+
+	LOGPFSML(fi, LOGL_DEBUG, "Rx N-CONNECT: %s: %s\n", gsm0808_bssap_name(bs->type),
+		 gsm0808_bssmap_name(bssmap_type));
+
+	switch (bssmap_type) {
+	case BSS_MAP_MSG_HANDOVER_RQST:
+		osmo_fsm_inst_dispatch(fi, GSCON_EV_A_HO_REQUEST, msg);
+		return;
+	default:
+		break;
+	}
+
+	LOGPFSML(fi, LOGL_NOTICE, "No support for N-CONNECT: %s: %s\n",
+		 gsm0808_bssap_name(bs->type), gsm0808_bssmap_name(bssmap_type));
+refuse:
+	osmo_fsm_inst_term(fi, OSMO_FSM_TERM_REGULAR, NULL);
+}
+
 static void gscon_fsm_init(struct osmo_fsm_inst *fi, uint32_t event, void *data)
 {
 	struct gsm_subscriber_connection *conn = fi->priv;
@@ -281,20 +346,23 @@ static void gscon_fsm_init(struct osmo_fsm_inst *fi, uint32_t event, void *data)
 		break;
 	case GSCON_EV_A_CONN_IND:
 		scu_prim = data;
-		if (!conn->sccp.msc) {
-			LOGPFSML(fi, LOGL_NOTICE, "N-CONNECT.ind from unknown MSC %s\n",
-				 osmo_sccp_addr_dump(&scu_prim->u.connect.calling_addr));
-			osmo_sccp_tx_disconn(conn->sccp.msc->a.sccp_user, scu_prim->u.connect.conn_id,
-					     &scu_prim->u.connect.called_addr, 0);
-			osmo_fsm_inst_term(fi, OSMO_FSM_TERM_REGULAR, NULL);
-		}
 		/* FIXME: Extract optional IMSI and update FSM using osmo_fsm_inst_set_id()
 		 * related: OS2969 (same as above) */
 
-		LOGPFSML(fi, LOGL_NOTICE, "No support for MSC-originated SCCP Connections yet\n");
-		osmo_sccp_tx_disconn(conn->sccp.msc->a.sccp_user, scu_prim->u.connect.conn_id,
-				     &scu_prim->u.connect.called_addr, 0);
-		osmo_fsm_inst_term(fi, OSMO_FSM_TERM_REGULAR, NULL);
+		handle_bssap_n_connect(fi, scu_prim);
+		break;
+	case GSCON_EV_A_HO_REQUEST:
+		/* Inter-BSC MT Handover Request, another BSS is handovering to us. */
+		{
+			struct msgb *ho_request_msg = data;
+			handover_parse_inter_bsc_mt(conn, ho_request_msg);
+			if (!conn->ho) {
+				osmo_fsm_inst_term(fi, OSMO_FSM_TERM_ERROR, NULL);
+				break;
+			}
+			osmo_fsm_inst_state_chg(fi, ST_WAIT_HO_CHAN_ACT, conn->network->T101, 101);
+			handover_mt_allocate_lchan(conn->ho);
+		}
 		break;
 	default:
 		OSMO_ASSERT(false);
@@ -426,8 +494,8 @@ static void gscon_fsm_active(struct osmo_fsm_inst *fi, uint32_t event, void *dat
 		 * more power over the actual handover process). */
 		osmo_fsm_inst_state_chg(fi, ST_WAIT_HO_COMPL, 0, 0);
 		break;
-	case GSCON_EV_A_HO_REQ:
-		/* FIXME: reject any handover requests with HO FAIL until implemented */
+	case GSCON_EV_INTER_BSC_HO_MO_START:
+		osmo_fsm_inst_state_chg(fi, ST_WAIT_MO_HO_CMD, conn->network->T7, 7);
 		break;
 	case GSCON_EV_MO_DTAP:
 		forward_dtap(conn, (struct msgb *)data, fi);
@@ -724,7 +792,7 @@ static void gscon_fsm_wait_ho_compl(struct osmo_fsm_inst *fi, uint32_t event, vo
 	switch (event) {
 	case GSCON_EV_HO_COMPL:
 		/* The handover logic informs us that the handover has been
-		 * completet. Now we have to tell the MGW the IP/Port on the
+		 * completed. Now we have to tell the MGW the IP/Port on the
 		 * new BTS so that the uplink RTP traffic can be redirected
 		 * there. */
 
@@ -770,7 +838,7 @@ static void gscon_fsm_wait_mdcx_bts_ho(struct osmo_fsm_inst *fi, uint32_t event,
 		/* The MGW has confirmed the handover MDCX, and the handover
 		 * is now also done on the RTP side. We may now change back
 		 * to the active state. */
-		osmo_fsm_inst_state_chg(fi, ST_ACTIVE, 0, 0);
+		handover_end(conn->ho, HO_RESULT_OK);
 		break;
 	case GSCON_EV_MO_DTAP:
 		forward_dtap(conn, (struct msgb *)data, fi);
@@ -781,8 +849,16 @@ static void gscon_fsm_wait_mdcx_bts_ho(struct osmo_fsm_inst *fi, uint32_t event,
 	case GSCON_EV_TX_SCCP:
 		sigtran_send(conn, (struct msgb *)data, fi);
 		break;
-	default:
-		OSMO_ASSERT(false);
+	}
+}
+
+static void gscon_fsm_wait_mo_ho_cmd(struct osmo_fsm_inst *fi, uint32_t event, void *data)
+{
+	struct gsm_subscriber_connection *conn = fi->priv;
+
+	switch (event) {
+	case GSCON_EV_A_HO_COMMAND:
+		osmo_fsm_inst_state_chg(fi, ST_MO_HO_PROCEEDING, conn->network->T8, 8);
 		break;
 	}
 }
@@ -791,87 +867,101 @@ static void gscon_fsm_wait_mdcx_bts_ho(struct osmo_fsm_inst *fi, uint32_t event,
 
 static const struct osmo_fsm_state gscon_fsm_states[] = {
 	[ST_INIT] = {
-		.name = OSMO_STRINGIFY(INIT),
-		.in_event_mask = S(GSCON_EV_A_CONN_REQ) | S(GSCON_EV_A_CONN_IND),
-		.out_state_mask = S(ST_WAIT_CC),
+		.name = "INIT",
+		.in_event_mask = S(GSCON_EV_A_CONN_REQ) | S(GSCON_EV_A_CONN_IND) |
+				 S(GSCON_EV_A_HO_REQUEST),
+		.out_state_mask = S(ST_WAIT_CC) | S(ST_WAIT_HO_CHAN_ACT),
 		.action = gscon_fsm_init,
 	 },
 	[ST_WAIT_CC] = {
-		.name = OSMO_STRINGIFY(WAIT_CC),
+		.name = "WAIT_CC",
 		.in_event_mask = S(GSCON_EV_A_CONN_CFM),
 		.out_state_mask = S(ST_ACTIVE),
 		.action = gscon_fsm_wait_cc,
 	},
 	[ST_ACTIVE] = {
-		.name = OSMO_STRINGIFY(ACTIVE),
+		.name = "ACTIVE",
 		.in_event_mask = EV_TRANSPARENT_SCCP | S(GSCON_EV_A_ASSIGNMENT_CMD) |
-				 S(GSCON_EV_A_HO_REQ) | S(GSCON_EV_HO_START),
+				 S(GSCON_EV_HO_START) |
+				 S(GSCON_EV_INTER_BSC_HO_MO_START),
 		.out_state_mask = S(ST_CLEARING) | S(ST_WAIT_CRCX_BTS) | S(ST_WAIT_ASS_CMPL) |
-				  S(ST_WAIT_MODE_MODIFY_ACK) | S(ST_WAIT_MO_HO_CMD) | S(ST_WAIT_HO_COMPL),
+				  S(ST_WAIT_MODE_MODIFY_ACK) | S(ST_WAIT_MO_HO_CMD) |
+				  S(ST_WAIT_HO_CHAN_ACT),
 		.action = gscon_fsm_active,
 	},
 	[ST_WAIT_CRCX_BTS] = {
-		.name = OSMO_STRINGIFY(WAIT_CRCX_BTS),
+		.name = "WAIT_CRCX_BTS",
 		.in_event_mask = EV_TRANSPARENT_SCCP | S(GSCON_EV_MGW_CRCX_RESP_BTS),
 		.out_state_mask = S(ST_ACTIVE) | S(ST_WAIT_ASS_CMPL),
 		.action = gscon_fsm_wait_crcx_bts,
 	},
 	[ST_WAIT_ASS_CMPL] = {
-		.name = OSMO_STRINGIFY(WAIT_ASS_CMPL),
+		.name = "WAIT_ASS_CMPL",
 		.in_event_mask = EV_TRANSPARENT_SCCP | S(GSCON_EV_RR_ASS_COMPL) | S(GSCON_EV_RR_ASS_FAIL),
 		.out_state_mask = S(ST_ACTIVE) | S(ST_WAIT_MDCX_BTS),
 		.action = gscon_fsm_wait_ass_cmpl,
 	},
 	[ST_WAIT_MDCX_BTS] = {
-		.name = OSMO_STRINGIFY(WAIT_MDCX_BTS),
+		.name = "WAIT_MDCX_BTS",
 		.in_event_mask = EV_TRANSPARENT_SCCP | S(GSCON_EV_MGW_MDCX_RESP_BTS),
 		.out_state_mask = S(ST_ACTIVE) | S(ST_WAIT_CRCX_MSC),
 		.action = gscon_fsm_wait_mdcx_bts,
 	},
 	[ST_WAIT_CRCX_MSC] = {
-		.name = OSMO_STRINGIFY(WAIT_CRCX_MSC),
+		.name = "WAIT_CRCX_MSC",
 		.in_event_mask = EV_TRANSPARENT_SCCP | S(GSCON_EV_MGW_CRCX_RESP_MSC),
 		.out_state_mask = S(ST_ACTIVE),
 		.action = gscon_fsm_wait_crcx_msc,
 	},
 	[ST_WAIT_MODE_MODIFY_ACK] = {
-		.name = OSMO_STRINGIFY(WAIT_MODE_MODIFY_ACK),
+		.name = "WAIT_MODE_MODIFY_ACK",
 		.in_event_mask = EV_TRANSPARENT_SCCP | S(GSCON_EV_RR_MODE_MODIFY_ACK),
 		.out_state_mask = S(ST_ACTIVE) | S(ST_CLEARING),
 		.action = gscon_fsm_wait_mode_modify_ack,
 	},
 	[ST_CLEARING] = {
-		.name = OSMO_STRINGIFY(CLEARING),
+		.name = "CLEARING",
 		.in_event_mask = S(GSCON_EV_RSL_CLEAR_COMPL),
 		.action = gscon_fsm_clearing,
 	 },
 
-	/* TODO: external handover, probably it makes sense to break up the
-	 * program flow in handover_logic.c a bit and handle some of the logic
-	 * here? */
-	[ST_WAIT_MT_HO_ACC] = {
-		.name = OSMO_STRINGIFY(WAIT_MT_HO_ACC),
+	[ST_WAIT_HO_CHAN_ACT] = {
+		.name = "WAIT_HO_CHAN_ACT",
+		.in_event_mask = EV_TRANSPARENT_SCCP
+				 | S(GSCON_EV_HO_CHAN_ACTIV_ACK)
+				 | S(GSCON_EV_HO_END),
+		.out_state_mask = S(ST_WAIT_HO_COMPL) | S(ST_WAIT_MT_HO_COMPL) | S(ST_ACTIVE) |
+				  S(ST_CLEARING),
+		.action = gscon_fsm_wait_ho_chan_act,
 	},
-	[ST_WAIT_MT_HO_COMPL] = {
-		 .name = OSMO_STRINGIFY(WAIT_MT_HO_COMPL),
-	},
+
+	/* Inter-BSC Handover, MO (Handover to a remote BSS) */
 	[ST_WAIT_MO_HO_CMD] = {
-		.name = OSMO_STRINGIFY(WAIT_MO_HO_CMD),
+		.name = "WAIT_MO_HO_CMD",
+		.in_event_mask = EV_TRANSPARENT_SCCP
+				 | S(GSCON_EV_A_HO_COMMAND)
+				 | S(GSCON_EV_HO_END),
+		.out_state_mask = S(ST_MO_HO_PROCEEDING) | S(ST_ACTIVE),
+		.action = gscon_fsm_wait_mo_ho_cmd,
 	},
 	[ST_MO_HO_PROCEEDING] = {
-		 .name = OSMO_STRINGIFY(MO_HO_PROCEEDING),
+		.name = "MO_HO_PROCEEDING",
+		.in_event_mask = EV_TRANSPARENT_SCCP
+				 | S(GSCON_EV_HO_END),
+		.out_state_mask = S(ST_CLEARING) | S(ST_ACTIVE),
+		/* all actions handled by gscon_fsm_allstate() */
 	},
 
 	/* Internal handover */
 	[ST_WAIT_HO_COMPL] = {
-		.name = OSMO_STRINGIFY(WAIT_HO_COMPL),
-		.in_event_mask = S(GSCON_EV_HO_COMPL) | S(GSCON_EV_HO_FAIL) | S(GSCON_EV_HO_TIMEOUT),
+		.name = "WAIT_HO_COMPL",
+		.in_event_mask = S(GSCON_EV_HO_COMPL) | S(GSCON_EV_HO_END),
 		.out_state_mask = S(ST_ACTIVE) | S(ST_WAIT_MDCX_BTS_HO) | S(ST_CLEARING),
 		.action = gscon_fsm_wait_ho_compl,
 	},
 	[ST_WAIT_MDCX_BTS_HO] = {
-		.name = OSMO_STRINGIFY(WAIT_MDCX_BTS_HO),
-		.in_event_mask = EV_TRANSPARENT_SCCP | S(GSCON_EV_MGW_MDCX_RESP_BTS),
+		.name = "WAIT_MDCX_BTS_HO",
+		.in_event_mask = EV_TRANSPARENT_SCCP | S(GSCON_EV_MGW_MDCX_RESP_BTS) | S(GSCON_EV_HO_END),
 		.action = gscon_fsm_wait_mdcx_bts_ho,
 		.out_state_mask = S(ST_ACTIVE),
 	},
@@ -938,6 +1028,35 @@ static void gscon_fsm_allstate(struct osmo_fsm_inst *fi, uint32_t event, void *d
 		resp = gsm0808_create_clear_rqst(GSM0808_CAUSE_RADIO_INTERFACE_FAILURE);
 		sigtran_send(conn, resp, fi);
 		break;
+	case GSCON_EV_HO_END:
+		{
+			/* Handover apparently failed and the call shall carry on as if nothing happened.
+			 * Except a conn release means we shouldn't cause more state transitions,
+			 * probably already in ST_CLEARING from GSCON_EV_A_CLEAR_CMD above. */
+			enum handover_result *result = data;
+			OSMO_ASSERT(result);
+			LOGPFSML(fi, LOGL_DEBUG, "HO_END result: %s\n", handover_result_name(*result));
+			if (*result == HO_RESULT_CONN_RELEASE) {
+				/* Already releasing. Nothing to do here. */
+				return;
+			}
+			if (!conn->ho) {
+				LOGPFSML(fi, LOGL_ERROR, "HO_END without handover data\n");
+				return;
+			}
+			if (*result != HO_RESULT_OK && (conn->ho->scope & HO_INTER_BSC_MT)) {
+				/* A failed inter-BSC MT HO. We should have established a new conn to
+				 * move the subscriber to, but it failed. Disconnect this new conn. */
+				resp = gsm0808_create_clear_rqst(GSM0808_CAUSE_RADIO_INTERFACE_FAILURE);
+				sigtran_send(conn, resp, fi);
+				osmo_fsm_inst_state_chg(fi, ST_CLEARING, 0, 0);
+				return;
+			}
+			/* A handover to another lchan failed, go back to the lchan we had before as if
+			 * nothing happened. */
+			osmo_fsm_inst_state_chg(fi, ST_ACTIVE, 0, 0);
+		}
+		break;
 	default:
 		OSMO_ASSERT(false);
 		break;
@@ -950,11 +1069,8 @@ static void gscon_cleanup(struct osmo_fsm_inst *fi, enum osmo_fsm_term_cause cau
 {
 	struct gsm_subscriber_connection *conn = fi->priv;
 
-	if (conn->ho) {
-		LOGPFSML(fi, LOGL_DEBUG, "Releasing handover state\n");
-		bsc_clear_handover(conn, 1);
-		conn->ho = NULL;
-	}
+	if (conn->ho)
+		handover_end(conn->ho, HO_RESULT_CONN_RELEASE);
 
 	if (conn->secondary_lchan) {
 		LOGPFSML(fi, LOGL_DEBUG, "Releasing secondary_lchan\n");
@@ -1025,7 +1141,19 @@ static int gscon_timer_cb(struct osmo_fsm_inst *fi)
 	case MGCP_MGW_HO_TIMEOUT_TIMER_NR:	/* Handover failed (no response from MGW) */
 		osmo_fsm_inst_state_chg(fi, ST_ACTIVE, 0, 0);
 		break;
+	case 3103:
+		/* HO Chan Act failed */
+	case 7:
+		/* outgoing inter-BSC handover failed, the MSC has not replied with a BSSMAP Handover
+		 * Command */
+	case 8:
+		/* outgoing inter-BSC handover failed, we sent the RR Handover Command, but MSC has
+		 * not followed up with a BSSMAP Clear -- apparently the remote BSS did not detect the
+		 * handover. */
+		handover_end(conn->ho, HO_RESULT_FAIL_TIMEOUT);
+		break;
 	default:
+		LOGPFSML(fi, LOGL_ERROR, "Unknown timer %d expired\n", fi->T);
 		OSMO_ASSERT(false);
 	}
 	return 0;
@@ -1036,7 +1164,8 @@ static struct osmo_fsm gscon_fsm = {
 	.states = gscon_fsm_states,
 	.num_states = ARRAY_SIZE(gscon_fsm_states),
 	.allstate_event_mask = S(GSCON_EV_A_DISC_IND) | S(GSCON_EV_A_CLEAR_CMD) | S(GSCON_EV_RSL_CONN_FAIL) |
-	    S(GSCON_EV_RLL_REL_IND) | S(GSCON_EV_MGW_FAIL_BTS) | S(GSCON_EV_MGW_FAIL_MSC),
+	    S(GSCON_EV_RLL_REL_IND) | S(GSCON_EV_MGW_FAIL_BTS) | S(GSCON_EV_MGW_FAIL_MSC) |
+	    S(GSCON_EV_HO_END),
 	.allstate_action = gscon_fsm_allstate,
 	.cleanup = gscon_cleanup,
 	.pre_term = gscon_pre_term,
