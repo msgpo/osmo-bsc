@@ -8,33 +8,82 @@
 #include <osmocom/gsm/gsm0808.h>
 
 #include <osmocom/bsc/neighbor_ident.h>
+#include <osmocom/bsc/gsm_data.h>
 
 struct gsm_network;
 struct gsm_lchan;
 struct gsm_bts;
 struct gsm_subscriber_connection;
 struct gsm_meas_rep mr;
-struct gsm0808_handover_required;
 
-#define LOGPHOLCHANTOLCHAN(old_lchan, new_lchan, level, fmt, args...) \
-	LOGP(DHODEC, level, "(BTS %u trx %u arfcn %u ts %u lchan %u %s)->(BTS %u trx %u arfcn %u ts %u lchan %u %s) (subscr %s) " fmt, \
-	     old_lchan->ts->trx->bts->nr, \
-	     old_lchan->ts->trx->nr, \
-	     old_lchan->ts->trx->arfcn, \
-	     old_lchan->ts->nr, \
-	     old_lchan->nr, \
-	     gsm_pchan_name(old_lchan->ts->pchan), \
-	     new_lchan->ts->trx->bts->nr, \
-	     new_lchan->ts->trx->nr, \
-	     new_lchan->ts->trx->arfcn, \
-	     new_lchan->ts->nr, \
-	     new_lchan->nr, \
-	     gsm_pchan_name(new_lchan->ts->pchan), \
-	     bsc_subscr_name(old_lchan->conn? old_lchan->conn->bsub : NULL), \
-	     ## args)
+#define LOG_FMT_BTS "bts=%d:lac=%d,ci=%d,arfcn=%d,bsic=%d"
+#define LOG_ARGS_BTS(bts) \
+		(bts) ? (bts)->nr : -1, \
+		(bts) ? (bts)->location_area_code : -1, \
+		(bts) ? (bts)->cell_identity : -1, \
+		(bts) ? (bts)->c0->arfcn : -1, \
+		(bts) ? (bts)->bsic : -1
 
-#define LOGPHO(struct_bsc_handover, level, fmt, args ...) \
-	LOGPHOLCHANTOLCHAN(struct_bsc_handover->old_lchan, struct_bsc_handover->new_lchan, level, fmt, ## args)
+#define LOG_FMT_LCHAN LOG_FMT_BTS "trx=%d,ts=%d,ss=%d,%s"
+#define LOG_ARGS_LCHAN(lchan) \
+		LOG_ARGS_BTS(lchan ? lchan->ts->trx->bts : NULL), \
+		lchan ? lchan->ts->trx->nr : -1, \
+		lchan ? lchan->ts->nr : -1, \
+		lchan ? lchan->nr : -1, \
+		lchan ? gsm_pchan_name(lchan->ts->pchan) : "-"
+
+#define LOG_FMT_HO "(subscr %s) %s"
+#define LOG_ARGS_HO(ho) \
+	     bsc_subscr_name(ho->conn? ho->conn->bsub : NULL), \
+	     handover_scope_name(ho->scope)
+
+#define LOGPHO(HO, level, fmt, args ...) \
+	do { \
+	if ((HO)->scope & (HO_INTRA_CELL | HO_INTRA_BSC)) { \
+		if ((HO)->mt.new_lchan) \
+			LOGP(DHODEC, level, "("LOG_FMT_LCHAN")->(" LOG_FMT_LCHAN ") " LOG_FMT_HO ": " fmt, \
+			     LOG_ARGS_LCHAN((HO)->mo.old_lchan), \
+			     LOG_ARGS_LCHAN((HO)->mt.new_lchan), \
+			     LOG_ARGS_HO(HO), ## args); \
+		else if ((HO)->mt.new_bts) \
+			LOGP(DHODEC, level, "("LOG_FMT_LCHAN")->("LOG_FMT_BTS",%s) " LOG_FMT_HO ": " fmt, \
+			     LOG_ARGS_LCHAN((HO)->mo.old_lchan), \
+			     LOG_ARGS_BTS((HO)->mt.new_bts), \
+			     gsm_lchant_name((HO)->new_lchan_type), \
+			     LOG_ARGS_HO(HO), ## args); \
+		else \
+			LOGP(DHODEC, level, "("LOG_FMT_LCHAN")->(?) " LOG_FMT_HO ": " fmt, \
+			     LOG_ARGS_LCHAN((HO)->mo.old_lchan), \
+			     LOG_ARGS_HO(HO), ## args); \
+	} else if ((HO)->scope & HO_INTER_BSC_MO) \
+		LOGP(DHODEC, level, "("LOG_FMT_LCHAN")->(%s) " LOG_FMT_HO ": " fmt, \
+		     LOG_ARGS_LCHAN((HO)->mo.old_lchan), \
+		     neighbor_ident_key_name(&(HO)->mo.target_cell), \
+		     LOG_ARGS_HO(HO), ## args); \
+	else if ((HO)->scope & HO_INTER_BSC_MT) { \
+		if ((HO)->mt.new_lchan) \
+			LOGP(DHODEC, level, "(remote:%s)->(local:%s|"LOG_FMT_LCHAN") " LOG_FMT_HO ": " fmt, \
+			     gsm0808_cell_id_name(&(HO)->mt.inter_bsc.cell_id_serving), \
+			     gsm0808_cell_id_name2(&(HO)->mt.inter_bsc.cell_id_target), \
+			     LOG_ARGS_LCHAN((HO)->mt.new_lchan), \
+			     LOG_ARGS_HO(HO), ## args); \
+		else if ((HO)->mt.new_bts) \
+			LOGP(DHODEC, level, "(remote:%s)->(local:%s|"LOG_FMT_BTS",%s) " LOG_FMT_HO ": " fmt, \
+			     gsm0808_cell_id_name(&(HO)->mt.inter_bsc.cell_id_serving), \
+			     gsm0808_cell_id_name2(&(HO)->mt.inter_bsc.cell_id_target), \
+			     LOG_ARGS_BTS((HO)->mt.new_bts), \
+			     gsm_lchant_name((HO)->new_lchan_type), \
+			     LOG_ARGS_HO(HO), ## args); \
+		else  \
+			LOGP(DHODEC, level, "(remote:%s)->(local:%s,%s) " LOG_FMT_HO ": " fmt, \
+			     gsm0808_cell_id_name(&(HO)->mt.inter_bsc.cell_id_serving), \
+			     gsm0808_cell_id_name2(&(HO)->mt.inter_bsc.cell_id_target), \
+			     gsm_lchant_name((HO)->new_lchan_type), \
+			     LOG_ARGS_HO(HO), ## args); \
+	} else \
+		LOGP(DHODEC, level, LOG_FMT_HO ": " fmt, LOG_ARGS_HO(HO), ## args); \
+	} while(0)
+
 
 enum hodec_id {
 	HODEC_NONE,
