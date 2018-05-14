@@ -19,6 +19,8 @@
  *
  */
 
+#include <osmocom/mgcp_client/mgcp_client_fsm.h>
+
 #include <osmocom/bsc/osmo_bsc.h>
 #include <osmocom/bsc/osmo_bsc_grace.h>
 #include <osmocom/bsc/osmo_bsc_rf.h>
@@ -27,7 +29,10 @@
 #include <osmocom/bsc/bsc_subscriber.h>
 #include <osmocom/bsc/paging.h>
 #include <osmocom/bsc/gsm_04_08_utils.h>
+#include <osmocom/bsc/gsm_04_80.h>
 #include <osmocom/bsc/bsc_subscr_conn_fsm.h>
+#include <osmocom/bsc/abis_rsl.h>
+#include <osmocom/bsc/handover_fsm.h>
 
 #include <osmocom/gsm/protocol/gsm_08_08.h>
 #include <osmocom/gsm/gsm0808.h>
@@ -36,7 +41,7 @@
 #include <osmocom/bsc/osmo_bsc_sigtran.h>
 #include <osmocom/bsc/osmo_bsc_lcls.h>
 #include <osmocom/bsc/a_reset.h>
-#include <osmocom/core/byteswap.h>
+#include <osmocom/bsc/handover.h>
 #include <osmocom/core/fsm.h>
 
 #define IP_V4_ADDR_LEN 4
@@ -45,161 +50,6 @@
  * helpers for the assignment command
  */
 
-/* Helper function for match_codec_pref(), looks up a matching permitted speech
- * value for a given msc audio codec pref */
-enum gsm0808_permitted_speech audio_support_to_gsm88(struct gsm_audio_support *audio)
-{
-	if (audio->hr) {
-		switch (audio->ver) {
-		case 1:
-			return GSM0808_PERM_HR1;
-			break;
-		case 2:
-			return GSM0808_PERM_HR2;
-			break;
-		case 3:
-			return GSM0808_PERM_HR3;
-			break;
-		default:
-			LOGP(DMSC, LOGL_ERROR, "Wrong speech mode: hr%d, using hr1 instead\n",
-			     audio->ver);
-			return GSM0808_PERM_HR1;
-		}
-	} else {
-		switch (audio->ver) {
-		case 1:
-			return GSM0808_PERM_FR1;
-			break;
-		case 2:
-			return GSM0808_PERM_FR2;
-			break;
-		case 3:
-			return GSM0808_PERM_FR3;
-			break;
-		default:
-			LOGP(DMSC, LOGL_ERROR, "Wrong speech mode: fr%d, using fr1 instead\n",
-			     audio->ver);
-			return GSM0808_PERM_FR1;
-		}
-	}
-}
-
-/* Helper function for match_codec_pref(), looks up a matching chan mode for
- * a given permitted speech value */
-enum gsm48_chan_mode gsm88_to_chan_mode(enum gsm0808_permitted_speech speech)
-{
-	switch (speech) {
-	case GSM0808_PERM_HR1:
-	case GSM0808_PERM_FR1:
-		return GSM48_CMODE_SPEECH_V1;
-		break;
-	case GSM0808_PERM_HR2:
-	case GSM0808_PERM_FR2:
-		return GSM48_CMODE_SPEECH_EFR;
-		break;
-	case GSM0808_PERM_HR3:
-	case GSM0808_PERM_FR3:
-		return GSM48_CMODE_SPEECH_AMR;
-		break;
-	default:
-		LOGP(DMSC, LOGL_FATAL,
-		     "Unsupported permitted speech selected, assuming AMR as channel mode...\n");
-		return GSM48_CMODE_SPEECH_AMR;
-	}
-}
-
-/* Helper function for match_codec_pref(), tests if a given audio support
- * matches one of the permitted speech settings of the channel type element.
- * The matched permitted speech value is then also compared against the
- * speech codec list. (optional, only relevant for AoIP) */
-static bool test_codec_pref(const struct gsm0808_channel_type *ct,
-			    const struct gsm0808_speech_codec_list *scl,
-			    uint8_t perm_spch)
-{
-	unsigned int i;
-	bool match = false;
-	struct gsm0808_speech_codec sc;
-	int rc;
-
-	/* Try to finde the given permitted speech value in the
-	 * codec list of the channel type element */
-	for (i = 0; i < ct->perm_spch_len; i++) {
-		if (ct->perm_spch[i] == perm_spch) {
-			match = true;
-			break;
-		}
-	}
-
-	/* If we do not have a speech codec list to test against,
-	 * we just exit early (will be always the case in non-AoIP networks) */
-	if (!scl)
-		return match;
-
-	/* If we failed to match until here, there is no
-	 * point in testing further */
-	if (match == false)
-		return false;
-
-	/* Extrapolate speech codec data */
-	rc = gsm0808_speech_codec_from_chan_type(&sc, perm_spch);
-	if (rc < 0)
-		return false;
-
-	/* Try to find extrapolated speech codec data in
-	 * the speech codec list */
-	for (i = 0; i < scl->len; i++) {
-		if (sc.type == scl->codec[i].type)
-			return true;
-	}
-
-	return false;
-}
-
-/*! Helper function for bssmap_handle_assignm_req(), matches the codec
- *  preferences from the MSC with the codec preferences
- *  \param[out] full_rate '1' if full-rate, '0' if half-rate, '-1' if no match
- *  \param[out] chan_mode GSM 04.08 channel mode
- *  \param[in] ct GSM 08.08 channel type
- *  \param[in] scl GSM 08.08 speech codec list
- *  \param[in] msc MSC data [for configuration]
- *  \returns 0 on success, -1 in case no match was found */
-static int match_codec_pref(int *full_rate, enum gsm48_chan_mode *chan_mode,
-			    const struct gsm0808_channel_type *ct,
-			    const struct gsm0808_speech_codec_list *scl,
-			    const struct bsc_msc_data *msc)
-{
-	unsigned int i;
-	uint8_t perm_spch;
-	bool match = false;
-
-	for (i = 0; i < msc->audio_length; i++) {
-		perm_spch = audio_support_to_gsm88(msc->audio_support[i]);
-		if (test_codec_pref(ct, scl, perm_spch)) {
-			match = true;
-			break;
-		}
-	}
-
-	/* Exit without result, in case no match can be deteched */
-	if (!match) {
-		*full_rate = -1;
-		*chan_mode = GSM48_CMODE_SIGN;
-		return -1;
-	}
-
-	/* Check if the result is a half or full rate codec */
-	if (perm_spch == GSM0808_PERM_HR1 || perm_spch == GSM0808_PERM_HR2
-	    || perm_spch == GSM0808_PERM_HR3 || perm_spch == GSM0808_PERM_HR4
-	    || perm_spch == GSM0808_PERM_HR6)
-		*full_rate = 0;
-	else
-		*full_rate = 1;
-
-	/* Lookup a channel mode for the selected codec */
-	*chan_mode = gsm88_to_chan_mode(perm_spch);
-
-	return 0;
-}
 
 static int bssmap_handle_reset_ack(struct bsc_msc_data *msc,
 				   struct msgb *msg, unsigned int length)
@@ -712,7 +562,6 @@ static int bssmap_handle_lcls_connect_ctrl(struct gsm_subscriber_connection *con
 	return 0;
 }
 
-
 /*
  * Handle the assignment request message.
  *
@@ -724,26 +573,24 @@ static int bssmap_handle_assignm_req(struct gsm_subscriber_connection *conn,
 	struct msgb *resp;
 	struct bsc_msc_data *msc;
 	struct tlv_parsed tp;
-	uint8_t timeslot = 0;
-	uint8_t multiplex = 0;
+	uint16_t cic = 0;
 	enum gsm48_chan_mode chan_mode = GSM48_CMODE_SIGN;
-	int full_rate = -1;
+	bool full_rate = false;
 	bool aoip = false;
 	struct sockaddr_storage rtp_addr;
 	struct gsm0808_channel_type ct;
-	struct gsm0808_speech_codec_list *scl_ptr = NULL;
 	uint8_t cause;
 	int rc;
+	struct assignment_request req = {};
 
 	if (!conn) {
 		LOGP(DMSC, LOGL_ERROR,
-		     "No lchan/msc_data in cipher mode command.\n");
+		     "No lchan/msc_data in Assignment Request\n");
 		return -1;
 	}
 
 	msc = conn->sccp.msc;
-	if (msc->a.asp_proto != OSMO_SS7_ASP_PROT_IPA)
-		aoip = true;
+	aoip = gscon_is_aoip(conn);
 
 	tlv_parse(&tp, gsm0808_att_tlvdef(), msg->l4h + 1, length - 1, 0, 0);
 
@@ -775,10 +622,7 @@ static int bssmap_handle_assignm_req(struct gsm_subscriber_connection *conn,
 	case GSM0808_CHAN_SPEECH:
 		if (TLVP_PRESENT(&tp, GSM0808_IE_CIRCUIT_IDENTITY_CODE)) {
 			/* CIC is permitted in both AoIP and SCCPlite */
-			conn->user_plane.cic =
-				osmo_load16be(TLVP_VAL(&tp, GSM0808_IE_CIRCUIT_IDENTITY_CODE));
-			timeslot = conn->user_plane.cic & 0x1f;
-			multiplex = (conn->user_plane.cic & ~0x1f) >> 5;
+			cic = osmo_load16be(TLVP_VAL(&tp, GSM0808_IE_CIRCUIT_IDENTITY_CODE));
 		} else {
 			if (!aoip) {
 				/* no CIC but SCCPlite: illegal */
@@ -803,27 +647,18 @@ static int bssmap_handle_assignm_req(struct gsm_subscriber_connection *conn,
 				cause = GSM0808_CAUSE_INCORRECT_VALUE;
 				goto reject;
 			}
-		} else {
-			if (aoip) {
-				/* no AoIP transport level address but AoIP transport: illegal */
-				LOGP(DMSC, LOGL_ERROR, "AoIP transport address missing in ASSIGN REQ, "
-				     "audio would not work; rejecting\n");
-				cause = GSM0808_CAUSE_INFORMATION_ELEMENT_OR_FIELD_MISSING;
-				goto reject;
-			}
+		} else if (aoip) {
+			/* no AoIP transport level address but AoIP transport: illegal */
+			LOGP(DMSC, LOGL_ERROR, "AoIP transport address missing in ASSIGN REQ, "
+			     "audio would not work; rejecting\n");
+			cause = GSM0808_CAUSE_INFORMATION_ELEMENT_OR_FIELD_MISSING;
+			goto reject;
 		}
 
-		/* Decode speech codec list (AoIP) */
-		conn->codec_list_present = false;
-		if (aoip) {
-
-			/* Check for speech codec list element */
-			if (!TLVP_PRESENT(&tp, GSM0808_IE_SPEECH_CODEC_LIST)) {
-				LOGP(DMSC, LOGL_ERROR, "Mandatory speech codec list not present.\n");
-				cause = GSM0808_CAUSE_INFORMATION_ELEMENT_OR_FIELD_MISSING;
-				goto reject;
-			}
-
+		/* Decode speech codec list. First set len = 0. */
+		conn->codec_list = (struct gsm0808_speech_codec_list){};
+		/* Check for speech codec list element */
+		if (TLVP_PRESENT(&tp, GSM0808_IE_SPEECH_CODEC_LIST)) {
 			/* Decode Speech Codec list */
 			rc = gsm0808_dec_speech_codec_list(&conn->codec_list,
 							   TLVP_VAL(&tp, GSM0808_IE_SPEECH_CODEC_LIST),
@@ -833,13 +668,19 @@ static int bssmap_handle_assignm_req(struct gsm_subscriber_connection *conn,
 				cause = GSM0808_CAUSE_INCORRECT_VALUE;
 				goto reject;
 			}
-			conn->codec_list_present = true;
-			scl_ptr = &conn->codec_list;
+		}
+
+		if (aoip && !conn->codec_list.len) {
+			LOGP(DMSC, LOGL_ERROR, "%s: AoIP speech mode Assignment Request:"
+			     " Missing or empty Speech Codec List IE\n", bsc_subscr_name(conn->bsub));
+			cause = GSM0808_CAUSE_INFORMATION_ELEMENT_OR_FIELD_MISSING;
+			goto reject;
 		}
 
 		/* Match codec information from the assignment command against the
 		 * local preferences of the BSC */
-		rc = match_codec_pref(&full_rate, &chan_mode, &ct, scl_ptr, msc);
+		rc = bsc_match_codec_pref(&chan_mode, &full_rate, &ct, &conn->codec_list,
+					  msc->audio_support, msc->audio_length);
 		if (rc < 0) {
 			LOGP(DMSC, LOGL_ERROR, "No supported audio type found for channel_type ="
 			     " { ch_indctr=0x%x, ch_rate_type=0x%x, perm_spch=[ %s] }\n",
@@ -856,43 +697,87 @@ static int bssmap_handle_assignm_req(struct gsm_subscriber_connection *conn,
 		       get_value_string(gsm48_chan_mode_names, chan_mode),
 		       ct.ch_indctr, ct.ch_rate_type, osmo_hexdump(ct.perm_spch, ct.perm_spch_len));
 
-		/* Forward the assignment request to lower layers */
+		req = (struct assignment_request){
+			.aoip = aoip,
+			.msc_assigned_cic = cic,
+			.chan_mode = chan_mode,
+			.full_rate = full_rate,
+		};
 		if (aoip) {
-			/* Store network side RTP connection information, we will
-			 * process this address later after we have established an RTP
-			 * connection to the BTS. This is just for organizational
-			 * reasons, functional wise it would not matter when exactly
-			 * the network side RTP connection is made, as long it is made
-			 * before we return with the assignment complete message. */
-			memcpy(&conn->user_plane.aoip_rtp_addr_remote, &rtp_addr, sizeof(rtp_addr));
-		} else {
-			/* Note: In the sccp-lite case we to not perform any mgcp operation,
-			 * (the MSC does that for us). We set conn->rtp_ip to 0 and check
-			 * on this later. By this we know that we have to behave accordingly
-			 * to sccp-lite. */
-			conn->user_plane.rtp_port = mgcp_timeslot_to_port(multiplex, timeslot, msc->rtp_base);
-			conn->user_plane.rtp_ip = 0;
+			if (!sockaddr_to_str_and_uint(req.msc_rtp_addr, sizeof(req.msc_rtp_addr),
+						      &req.msc_rtp_port, &rtp_addr)) {
+				LOGP(DMSC, LOGL_ERROR, "Assignment request: Invalid RTP address (too long?)\n");
+				cause = GSM0808_CAUSE_REQ_CODEC_TYPE_OR_CONFIG_UNAVAIL;
+				goto reject;
+			}
 		}
-		conn->user_plane.chan_mode = chan_mode;
-		conn->user_plane.full_rate = full_rate;
-		osmo_fsm_inst_dispatch(conn->fi, GSCON_EV_A_ASSIGNMENT_CMD, NULL);
 		break;
 	case GSM0808_CHAN_SIGN:
-		conn->user_plane.chan_mode = GSM48_CMODE_SIGN;
-		osmo_fsm_inst_dispatch(conn->fi, GSCON_EV_A_ASSIGNMENT_CMD, NULL);
+		req = (struct assignment_request){
+			.aoip = aoip,
+			.chan_mode = chan_mode,
+		};
 		break;
 	default:
 		cause = GSM0808_CAUSE_INVALID_MESSAGE_CONTENTS;
 		goto reject;
 	}
 
-	return 0;
+	return osmo_fsm_inst_dispatch(conn->fi, GSCON_EV_ASSIGNMENT_START, &req);
+
 reject:
 	resp = gsm0808_create_assignment_failure(cause, NULL);
 	OSMO_ASSERT(resp);
 
 	osmo_fsm_inst_dispatch(conn->fi, GSCON_EV_TX_SCCP, resp);
 	return -1;
+}
+
+/* Handle Handover Command message, part of inter-BSC handover:
+ * This BSS sent a Handover Required message.
+ * The MSC contacts the remote BSS and receives from it an RR Handover Command; this BSSMAP Handover
+ * Command passes the RR Handover Command over to us and it's our job to forward to the MS.
+ *
+ * See 3GPP TS 48.008 §3.2.1.11
+ */
+static int bssmap_handle_handover_cmd(struct gsm_subscriber_connection *conn,
+				      struct msgb *msg, unsigned int length)
+{
+	struct tlv_parsed tp;
+
+	if (!conn->ho.fi) {
+		LOGPFSML(conn->fi, LOGL_ERROR,
+			 "Received Handover Command, but no handover was requested");
+		/* Should we actually allow the MSC to make us handover without us having requested it
+		 * first? Doesn't make any practical sense AFAICT. */
+		return -EINVAL;
+	}
+
+	tlv_parse(&tp, gsm0808_att_tlvdef(), msg->l4h + 1, length - 1, 0, 0);
+
+	/* Check for channel type element, if its missing, immediately reject */
+	if (!TLVP_PRESENT(&tp, GSM0808_IE_LAYER_3_INFORMATION)) {
+		LOGPFSML(conn->fi, LOGL_ERROR,
+			 "Received Handover Command,"
+			 " but mandatory IE not present: Layer 3 Information\n");
+		goto reject;
+	}
+
+
+	{
+		struct moho_rx_bssmap_ho_command rx = {
+			.l3_info = TLVP_VAL(&tp, GSM0808_IE_LAYER_3_INFORMATION),
+			.l3_info_len = TLVP_LEN(&tp, GSM0808_IE_LAYER_3_INFORMATION),
+		};
+
+		osmo_fsm_inst_dispatch(conn->ho.fi, MOHO_EV_BSSMAP_HO_COMMAND, &rx);
+	}
+	return 0;
+reject:
+	/* No "Handover Command Reject" message or similar is specified, so we cannot reply in case of
+	 * failure. Or is there?? */
+	handover_end(conn, HO_RESULT_ERROR);
+	return -EINVAL;
 }
 
 static int bssmap_rcvmsg_udt(struct bsc_msc_data *msc,
@@ -953,6 +838,9 @@ static int bssmap_rcvmsg_dt1(struct gsm_subscriber_connection *conn,
 	case BSS_MAP_MSG_LCLS_CONNECT_CTRL:
 		ret = bssmap_handle_lcls_connect_ctrl(conn, msg, length);
 		break;
+	case BSS_MAP_MSG_HANDOVER_CMD:
+		ret = bssmap_handle_handover_cmd(conn, msg, length);
+		break;
 	default:
 		LOGP(DMSC, LOGL_NOTICE, "Unimplemented msg type: %s\n",
 			gsm0808_bssmap_name(msg->l4h[0]));
@@ -960,6 +848,14 @@ static int bssmap_rcvmsg_dt1(struct gsm_subscriber_connection *conn,
 	}
 
 	return ret;
+}
+
+int bsc_send_welcome_ussd(struct gsm_subscriber_connection *conn)
+{
+	bsc_send_ussd_notify(conn, 1, conn->sccp.msc->ussd_welcome_txt);
+	bsc_send_ussd_release_complete(conn);
+
+	return 0;
 }
 
 static int dtap_rcvmsg(struct gsm_subscriber_connection *conn,
@@ -1065,4 +961,138 @@ int bsc_handle_dt(struct gsm_subscriber_connection *conn,
 	}
 
 	return -1;
+}
+
+int bsc_tx_bssmap_ho_required(struct gsm_lchan *lchan, const struct gsm0808_cell_id_list2 *target_cells)
+{
+	int rc;
+	struct msgb *msg;
+	struct gsm0808_handover_required params = {
+		.cause = GSM0808_CAUSE_BETTER_CELL,
+		.cil = *target_cells,
+		.current_channel_type_1_present = true,
+		.current_channel_type_1 = gsm0808_current_channel_type_1(lchan->type),
+	};
+
+	switch (lchan->type) {
+	case GSM_LCHAN_TCH_F:
+	case GSM_LCHAN_TCH_H:
+		params.speech_version_used_present = true;
+		params.speech_version_used = gsm0808_permitted_speech(lchan->type,
+								      lchan->tch_mode);
+		if (!params.speech_version_used) {
+			LOG_HO(lchan->conn, LOGL_ERROR, "Cannot encode Speech Version (Used)"
+			       " for BSSMAP Handover Required message");
+			return -EINVAL;
+		}
+		break;
+	default:
+		break;
+	}
+
+	msg = gsm0808_create_handover_required(&params);
+	if (!msg) {
+		LOG_HO(lchan->conn, LOGL_ERROR, "Cannot compose BSSMAP Handover Required message");
+		return -EINVAL;
+	}
+
+	rc = gscon_sigtran_send(lchan->conn, msg);
+	if (rc) {
+		LOG_HO(lchan->conn, LOGL_ERROR, "Cannot send BSSMAP Handover Required message");
+		return rc;
+	}
+
+	return 0;
+}
+
+/* Inter-BSC MT HO, new BSS has allocated a channel and sends the RR Handover Command via MSC to the old
+ * BSS, encapsulated in a BSSMAP Handover Request Acknowledge. */
+int bsc_tx_bssmap_ho_request_ack(struct gsm_subscriber_connection *conn, struct msgb *rr_ho_command)
+{
+	struct msgb *msg;
+	struct gsm_lchan *new_lchan = conn->ho.mt.new_lchan;
+
+	msg = gsm0808_create_handover_request_ack(rr_ho_command->data, rr_ho_command->len,
+						  gsm0808_chosen_channel(new_lchan->type,
+									 new_lchan->tch_mode),
+						  new_lchan->encr.alg_id,
+						  gsm0808_permitted_speech(new_lchan->type,
+									   new_lchan->tch_mode));
+	msgb_free(rr_ho_command);
+	if (!msg)
+		return -ENOMEM;
+	return osmo_bsc_sigtran_send(conn, msg);
+}
+
+int bsc_tx_bssmap_ho_detect(struct gsm_subscriber_connection *conn)
+{
+	struct msgb *msg;
+	msg = gsm0808_create_handover_detect();
+	if (!msg)
+		return -ENOMEM;
+
+	return osmo_bsc_sigtran_send(conn, msg);
+}
+
+enum handover_result bsc_tx_bssmap_ho_complete(struct gsm_subscriber_connection *conn,
+					       struct gsm_lchan *lchan)
+{
+	int rc;
+	struct msgb *msg;
+	struct handover *ho = &conn->ho;
+	enum gsm0808_lcls_status lcls_status = lcls_get_status(conn);
+
+	struct gsm0808_handover_complete params = {
+		.chosen_encr_alg_present = true,
+		.chosen_encr_alg = lchan->encr.alg_id,
+
+		.chosen_channel_present = true,
+		.chosen_channel = gsm0808_chosen_channel(lchan->type, lchan->tch_mode),
+
+		.lcls_bss_status_present = (lcls_status != 0xff),
+		.lcls_bss_status = lcls_status,
+	};
+
+	/* speech_codec_chosen */
+	if (ho->mt.new_lchan->activate.requires_voice_stream && gscon_is_aoip(conn)) {
+		int perm_spch = gsm0808_permitted_speech(lchan->type, lchan->tch_mode);
+		params.speech_codec_chosen_present = true;
+		rc = gsm0808_speech_codec_from_chan_type(&params.speech_codec_chosen, perm_spch);
+		if (rc) {
+			LOG_HO(conn, LOGL_ERROR, "Unable to compose Speech Codec (Chosen)");
+			return HO_RESULT_ERROR;
+		}
+	}
+
+	msg = gsm0808_create_handover_complete(&params);
+	if (!msg) {
+		LOG_HO(conn, LOGL_ERROR, "Unable to compose BSSMAP Handover Complete message");
+		return HO_RESULT_ERROR;
+	}
+
+	rc = gscon_sigtran_send(conn, msg);
+	if (rc) {
+		LOG_HO(conn, LOGL_ERROR, "Cannot send BSSMAP Handover Complete message");
+		return HO_RESULT_ERROR;
+	}
+
+	return HO_RESULT_OK;
+}
+
+void bsc_tx_bssmap_ho_failure(struct gsm_subscriber_connection *conn)
+{
+	int rc;
+	struct msgb *msg;
+	struct gsm0808_handover_failure params = {};
+
+	msg = gsm0808_create_handover_failure(&params);
+	if (!msg) {
+		LOG_HO(conn, LOGL_ERROR, "Unable to compose BSSMAP Handover Failure message");
+		return;
+	}
+
+	rc = gscon_sigtran_send(conn, msg);
+	if (rc)
+		LOG_HO(conn, LOGL_ERROR, "Cannot send BSSMAP Handover Failure message (rc=%d %s)",
+		       rc, strerror(-rc));
 }
