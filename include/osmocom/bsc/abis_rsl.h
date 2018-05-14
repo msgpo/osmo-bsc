@@ -117,5 +117,7 @@ void dyn_ts_init(struct gsm_bts_trx_ts *ts);
 int dyn_ts_switchover_start(struct gsm_bts_trx_ts *ts,
 			    enum gsm_phys_chan_config to_pchan);
 
+int rsl_forward_layer3_info(struct gsm_lchan *lchan, const uint8_t *l3_info, uint8_t l3_info_len);
+
 #endif /* RSL_MT_H */
 

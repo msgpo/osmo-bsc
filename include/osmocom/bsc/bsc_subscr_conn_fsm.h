@@ -14,8 +14,6 @@ enum gscon_fsm_event {
 	GSCON_EV_A_CLEAR_CMD,
 	/* MSC SCCP disconnect indication */
 	GSCON_EV_A_DISC_IND,
-	/* MSC sends Handover Request (in CR) */
-	GSCON_EV_A_HO_REQ,
 
 	/* RR ASSIGNMENT COMPLETE received */
 	GSCON_EV_RR_ASS_COMPL,
@@ -53,12 +51,29 @@ enum gscon_fsm_event {
 
 	/* Internal handover request (intra-BSC handover) */
 	GSCON_EV_HO_START,
-	/* Handover timed out (T3103 in handover_logic.c) */
-	GSCON_EV_HO_TIMEOUT,
-	/* Handover failed (handover_logic.c) */
-	GSCON_EV_HO_FAIL,
-	/* Handover completed successfully (handover_logic.c) */
+	/* HO success, or any error like no-channel-available, Chan Activ Nack, 04.08 HANDOVER FAIL,
+	 * internal/arbitrary error or connection release, leading to a premature end of a handover. The
+	 * precise result is sent as enum handover_result* in the event dispatch data argument. */
+	GSCON_EV_HO_END,
+
+	/* RSL has acknowledged activation of the new lchan */
+	GSCON_EV_HO_CHAN_ACTIV_ACK,
+	/* GSM 08.58 HANDOVER DETECT has been received */
+	GSCON_EV_HO_DETECT,
+	/* GSM 04.08 HANDOVER COMPLETE has been received on new channel */
 	GSCON_EV_HO_COMPL,
+
+	/* Request handover from this to another BSS (inter-BSC handover) */
+	GSCON_EV_INTER_BSC_HO_MO_START,
+	/* MSC replies to Handover Required with a Handover Command */
+	GSCON_EV_A_HO_COMMAND,
+
+	/* Inter-BSC HO MT: Handover Request: MSC asks us to accept a handover from another BSS */
+	GSCON_EV_A_HO_REQUEST,
+
+	/* Inter-BSC HO MT: MS replies to Handover Command */
+	GSCON_EV_RR_HO_ACCEPT,
+
 };
 
 struct gsm_subscriber_connection;

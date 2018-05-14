@@ -20,7 +20,6 @@
 #include <osmocom/crypt/auth.h>
 
 #include <osmocom/bsc/rest_octets.h>
-#include <osmocom/bsc/handover.h>
 
 #include <osmocom/core/bitvec.h>
 #include <osmocom/gsm/gsm_utils.h>
@@ -43,6 +42,7 @@ struct mgcp_ctx;
 
 struct bsc_subscr;
 struct gprs_ra_id;
+struct handover;
 
 #define OBSC_LINKID_CB(__msgb)	(__msgb)->cb[3]
 
@@ -110,7 +110,7 @@ struct gsm_subscriber_connection {
 	struct gsm_lchan *lchan;
 
 	/* handover information, if a handover is pending for this conn. */
-	struct bsc_handover *ho;
+	struct handover *ho;
 
 	/* timer for assignment handling */
 	struct osmo_timer_list T10;
