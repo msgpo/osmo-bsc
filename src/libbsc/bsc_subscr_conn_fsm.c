@@ -403,12 +403,61 @@ static void _assignment_failed(struct osmo_fsm_inst *fi, enum gsm0808_cause caus
 		osmo_fsm_inst_state_chg(fi, ST_ACTIVE, 0, 0);
 }
 
+/* Assuming conn->user_plane.chan_mode and .full_rate to be set */
+static enum gsm0808_cause assign_lchan(struct osmo_fsm_inst *fi)
+{
+	int rc;
+	struct gsm_subscriber_connection *conn = fi->priv;
+	struct mgcp_conn_peer conn_peer = {
+		.call_id = conn->sccp.conn_id,
+		.endpoint = ENDPOINT_ID,
+	};
+
+	switch (conn->user_plane.chan_mode) {
+	case GSM48_CMODE_SPEECH_V1:
+	case GSM48_CMODE_SPEECH_EFR:
+	case GSM48_CMODE_SPEECH_AMR:
+		/* A voice channel is requested, so we run down the
+		 * mgcp-ass-mgcp state-chain */
+
+		/* (Pre)Change state and create the connection */
+		osmo_fsm_inst_state_chg(fi, ST_WAIT_CRCX_BTS, MGCP_MGW_TIMEOUT, MGCP_MGW_TIMEOUT_TIMER_NR);
+		conn->user_plane.fi_bts = mgcp_conn_create(conn->network->mgw.client, fi,
+							   GSCON_EV_MGW_FAIL_BTS,
+							   GSCON_EV_MGW_CRCX_RESP_BTS, &conn_peer);
+		if (!conn->user_plane.fi_bts)
+			return GSM0808_CAUSE_EQUIPMENT_FAILURE;
+		return 0;
+	case GSM48_CMODE_SIGN:
+		/* A signalling channel is requested, so we perform the
+		 * channel assignment directly without performing any
+		 * MGCP actions. ST_WAIT_ASS_CMPL will see by the
+		 * conn->user_plane.chan_mode parameter that this
+		 * assignment is for a signalling channel and will then
+		 * change back to ST_ACTIVE (here) immediately. */
+		rc = gsm0808_assign_req(conn, conn->user_plane.chan_mode, conn->user_plane.full_rate);
+		if (rc != 0)
+			return GSM0808_CAUSE_EQUIPMENT_FAILURE;
+		osmo_fsm_inst_state_chg(fi, ST_WAIT_ASS_CMPL, GSM0808_T10_VALUE, GSM0808_T10_TIMER_NR);
+		return 0;
+	default:
+		/* An unsupported channel is requested, so we have to
+		 * reject this request by sending an assignment failure
+		 * message immediately */
+		LOGPFSML(fi, LOGL_ERROR, "Channel mode not supported: %s\n",
+			 get_value_string(gsm48_chan_mode_names, conn->user_plane.chan_mode));
+
+		return GSM0808_CAUSE_REQ_CODEC_TYPE_OR_CONFIG_NOT_SUPP;
+	}
+}
+
 /* We're on an active subscriber connection, passing DTAP back and forth */
 static void gscon_fsm_active(struct osmo_fsm_inst *fi, uint32_t event, void *data)
 {
 	struct gsm_subscriber_connection *conn = fi->priv;
 	struct msgb *resp = NULL;
 	struct mgcp_conn_peer conn_peer;
+	enum gsm0808_cause cause;
 	int rc;
 
 	switch (event) {
@@ -425,74 +474,16 @@ static void gscon_fsm_active(struct osmo_fsm_inst *fi, uint32_t event, void *dat
 		/* FIXME: We need to check if current channel is sufficient. If
 		 * yes, do MODIFY. If not, do assignment (see commented lines below) */
 
-		switch (conn->user_plane.chan_mode) {
-		case GSM48_CMODE_SPEECH_V1:
-		case GSM48_CMODE_SPEECH_EFR:
-		case GSM48_CMODE_SPEECH_AMR:
-			/* A voice channel is requested, so we run down the
-			 * mgcp-ass-mgcp state-chain (see FIXME above) */
-			memset(&conn_peer, 0, sizeof(conn_peer));
-			conn_peer.call_id = conn->sccp.conn_id;
-			osmo_strlcpy(conn_peer.endpoint, ENDPOINT_ID, sizeof(conn_peer.endpoint));
-
-			/* (Pre)Change state and create the connection */
-			osmo_fsm_inst_state_chg(fi, ST_WAIT_CRCX_BTS, MGCP_MGW_TIMEOUT, MGCP_MGW_TIMEOUT_TIMER_NR);
-			conn->user_plane.fi_bts =
-			    mgcp_conn_create(conn->network->mgw.client, fi, GSCON_EV_MGW_FAIL_BTS,
-					     GSCON_EV_MGW_CRCX_RESP_BTS, &conn_peer);
-			if (!conn->user_plane.fi_bts) {
-				assignment_failed(fi, GSM0808_CAUSE_EQUIPMENT_FAILURE);
-				return;
-			}
-			break;
-		case GSM48_CMODE_SIGN:
-			/* A signalling channel is requested, so we perform the
-			 * channel assignment directly without performing any
-			 * MGCP actions. ST_WAIT_ASS_CMPL will see by the
-			 * conn->user_plane.chan_mode parameter that this
-			 * assignment is for a signalling channel and will then
-			 * change back to ST_ACTIVE (here) immediately. */
-			rc = gsm0808_assign_req(conn, conn->user_plane.chan_mode,
-						conn->user_plane.full_rate);
-
-			if (rc == 1) {
-				send_ass_compl(conn->lchan, fi, false);
-				return;
-			} else if (rc != 0) {
-				assignment_failed(fi, GSM0808_CAUSE_EQUIPMENT_FAILURE);
-				return;
-			}
-
-			osmo_fsm_inst_state_chg(fi, ST_WAIT_ASS_CMPL, GSM0808_T10_VALUE, GSM0808_T10_TIMER_NR);
-			break;
-		default:
-			/* An unsupported channel is requested, so we have to
-			 * reject this request by sending an assignment failure
-			 * message immediately */
-			LOGPFSML(fi, LOGL_ERROR, "Requested channel mode is not supported! chan_mode=%s full_rate=%d\n",
-				 get_value_string(gsm48_chan_mode_names, conn->user_plane.chan_mode),
-				 conn->user_plane.full_rate);
-
-			/* The requested channel mode is not supported  */
-			assignment_failed(fi, GSM0808_CAUSE_REQ_CODEC_TYPE_OR_CONFIG_NOT_SUPP);
-			break;
+		cause = assign_lchan(fi);
+		if (cause) {
+			assignment_failed(fi, cause);
+			return;
 		}
 		break;
 	case GSCON_EV_HO_START:
-		rc = bsc_handover_start_gscon(conn);
-		if (rc) {
-			resp = gsm0808_create_clear_rqst(GSM0808_CAUSE_EQUIPMENT_FAILURE);
-			sigtran_send(conn, resp, fi);
-			osmo_fsm_inst_state_chg(fi, ST_CLEARING, 0, 0);
-			return;
-		}
-
-		/* Note: No timeout is set here, T3103 in handover_logic.c
-		 * will generate a GSCON_EV_HO_TIMEOUT event should the
-		 * handover time out, so we do not need another timeout
-		 * here (maybe its worth to think about giving GSCON
-		 * more power over the actual handover process). */
-		osmo_fsm_inst_state_chg(fi, ST_WAIT_HO_COMPL, 0, 0);
+		/* TODO: is T3103 not the right T# for waiting for a chan activ ack */
+		osmo_fsm_inst_state_chg(fi, ST_WAIT_HO_CHAN_ACT, conn->network->T3103, 3103);
+		handover_mt_allocate_lchan(conn->ho);
 		break;
 	case GSCON_EV_INTER_BSC_HO_MO_START:
 		osmo_fsm_inst_state_chg(fi, ST_WAIT_MO_HO_CMD, conn->network->T7, 7);
@@ -508,6 +499,62 @@ static void gscon_fsm_active(struct osmo_fsm_inst *fi, uint32_t event, void *dat
 		break;
 	default:
 		OSMO_ASSERT(false);
+		break;
+	}
+}
+
+static void gscon_fsm_wait_ho_chan_act(struct osmo_fsm_inst *fi, uint32_t event, void *data)
+{
+	struct gsm_subscriber_connection *conn = fi->priv;
+	struct handover *ho = conn->ho;
+	struct gsm_lchan *new_lchan;
+
+	switch (event) {
+	case GSCON_EV_HO_CHAN_ACTIV_ACK:
+		new_lchan = data;
+		OSMO_ASSERT(new_lchan);
+
+		if (!handover_is_sane(ho, NULL, new_lchan))
+			return;
+
+		if (!ho->mt.new_lchan) {
+			LOGPFSML(fi, LOGL_ERROR, "Internal error:"
+				 " chan activ ack, but no ho->new_lchan\n");
+			handover_end(ho, HO_RESULT_ERROR);
+			return;
+		}
+
+		if (ho->scope & (HO_INTRA_CELL | HO_INTRA_BSC)) {
+			/* we can now send the 04.08 HANDOVER COMMAND to the MS
+			 * using the old lchan */
+			gsm48_send_ho_cmd(ho->mo.old_lchan, ho->mt.new_lchan, ho->mt.new_lchan->ms_power, ho->mt.ho_ref);
+
+			/* create a RTP connection */
+			if (is_ipaccess_bts(new_lchan->ts->trx->bts))
+				rsl_ipacc_crcx(new_lchan);
+
+			osmo_fsm_inst_state_chg(fi, ST_WAIT_HO_COMPL, conn->network->T3103, 3103);
+		} else if (ho->scope & HO_INTER_BSC_MT) {
+			/* We can now send the HANDOVER REQUEST ACKNOWLEDGE message to the remote MO BSS */
+			struct msgb *rr_ho_cmd = gsm48_make_ho_cmd(ho->mt.new_lchan,
+								   ho->mt.new_lchan->ms_power,
+								   ho->mt.ho_ref);
+
+			if (!rr_ho_cmd) {
+				LOGPFSML(fi, LOGL_ERROR, "Unable to compose RR Handover Command\n");
+				handover_end(ho, HO_RESULT_ERROR);
+				return;
+			}
+
+			bsc_send_handover_request_ack(ho, rr_ho_cmd);
+
+			/* FIXME: probably the wrong T timer number */
+			osmo_fsm_inst_state_chg(fi, ST_WAIT_MT_HO_RR_ACCEPT, conn->network->T3103, 3103);
+		} else {
+			LOGPFSML(fi, LOGL_ERROR, "Internal error:"
+				 " chan activ ack, but no MT handover\n");
+			handover_end(ho, HO_RESULT_ERROR);
+		}
 		break;
 	}
 }
@@ -813,17 +860,6 @@ static void gscon_fsm_wait_ho_compl(struct osmo_fsm_inst *fi, uint32_t event, vo
 			return;
 		}
 		break;
-	case GSCON_EV_HO_TIMEOUT:
-	case GSCON_EV_HO_FAIL:
-		/* The handover logic informs us that the handover failed for
-		 * some reason. This means the phone stays on the TS/BTS on
-		 * which it currently is. We will change back to the active
-		 * state again as there are no further operations needed */
-		osmo_fsm_inst_state_chg(fi, ST_ACTIVE, 0, 0);
-		break;
-	default:
-		OSMO_ASSERT(false);
-		break;
 	}
 }
 
@@ -862,6 +898,46 @@ static void gscon_fsm_wait_mo_ho_cmd(struct osmo_fsm_inst *fi, uint32_t event, v
 		break;
 	}
 }
+
+static void gscon_fsm_wait_mt_ho_rr_accept(struct osmo_fsm_inst *fi, uint32_t event, void *data)
+{
+	struct gsm_subscriber_connection *conn = fi->priv;
+	struct handover *ho = conn->ho;
+	struct gsm_lchan *new_lchan;
+	switch (event) {
+	case GSCON_EV_RR_HO_ACCEPT:
+		/* Inter-BSC HO MT, the phone first shows up in this BSS.
+		 * Send Handover Detected to the originating BSS via the MSC,
+		 * and send RR Physical Information to the MS. */
+
+		new_lchan = data;
+		OSMO_ASSERT(new_lchan);
+
+		if (!new_lchan) {
+			LOGPFSML(fi, LOGL_ERROR, "Internal error: HO Accept, but no new_lchan\n");
+			handover_end(ho, HO_RESULT_ERROR);
+			return;
+		}
+
+		if (!ho) {
+			struct msgb *resp;
+			LOGPFSML(fi, LOGL_ERROR, "Internal error: HO Accept, but no HO ongoing\n");
+			resp = gsm0808_create_clear_rqst(GSM0808_CAUSE_EQUIPMENT_FAILURE);
+			sigtran_send(conn, resp, fi);
+			osmo_fsm_inst_state_chg(fi, ST_CLEARING, 0, 0);
+			return;
+		}
+
+		if (!handover_is_sane(ho, NULL, new_lchan))
+			return;
+
+		osmo_fsm_inst_state_chg(fi, ST_WAIT_HO_COMPL, conn->network->T3103, 3103);
+		/* FIXME */
+		handover_end(ho, HO_RESULT_ERROR);
+		break;
+	}
+}
+
 
 #define EV_TRANSPARENT_SCCP S(GSCON_EV_TX_SCCP) | S(GSCON_EV_MO_DTAP) | S(GSCON_EV_MT_DTAP)
 
@@ -950,6 +1026,21 @@ static const struct osmo_fsm_state gscon_fsm_states[] = {
 				 | S(GSCON_EV_HO_END),
 		.out_state_mask = S(ST_CLEARING) | S(ST_ACTIVE),
 		/* all actions handled by gscon_fsm_allstate() */
+	},
+
+	[ST_WAIT_MT_HO_RR_ACCEPT] = {
+		.name = "WAIT_MT_HO_ACCEPT",
+		.in_event_mask = EV_TRANSPARENT_SCCP
+				 | S(GSCON_EV_RR_HO_ACCEPT)
+				 | S(GSCON_EV_HO_END),
+		.out_state_mask = S(ST_CLEARING) | S(ST_ACTIVE),
+		.action = gscon_fsm_wait_mt_ho_rr_accept,
+	},
+
+	[ST_WAIT_MT_HO_COMPL] = {
+		.in_event_mask = EV_TRANSPARENT_SCCP
+				 | S(GSCON_EV_HO_END),
+		.name = "WAIT_MT_HO_COMPL",
 	},
 
 	/* Internal handover */
