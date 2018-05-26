@@ -24,8 +24,8 @@
 #include <osmocom/bsc/signal.h>
 #include <osmocom/bsc/bsc_subscriber.h>
 #include <osmocom/bsc/bsc_msc_data.h>
-#include <osmocom/bsc/common_bsc.h>
 #include <osmocom/bsc/osmo_bsc_rf.h>
+#include <osmocom/bsc/bss.h>
 
 struct msgb *msgb_from_hex(const char *label, uint16_t size, const char *hex)
 {
@@ -80,7 +80,7 @@ struct {
 	},
 };
 
-struct gsm_network *bsc_gsmnet;
+struct gsm_network *bsc_gsmnet = NULL;
 
 void test_cell_identifier()
 {
@@ -89,7 +89,7 @@ void test_cell_identifier()
 	struct bsc_msc_data *msc;
 	struct gsm_bts *bts;
 
-	bsc_gsmnet = bsc_network_init(NULL);
+	bsc_network_alloc();
 	bsc_gsmnet->bsc_data->rf_ctrl = talloc_zero(NULL, struct osmo_bsc_rf);
 	bsc_gsmnet->bsc_data->rf_ctrl->policy = S_RF_ON;
 
@@ -164,3 +164,18 @@ int bsc_sccplite_rx_ctrl(struct osmo_ss7_asp *asp, struct msgb *msg) {
 int bsc_sccplite_rx_mgcp(struct osmo_ss7_asp *asp, struct msgb *msg) {
 	OSMO_ASSERT(0);
 }
+
+int bsc_msg_filter_initial(struct gsm48_hdr *hdr48, size_t hdr48_len,
+			struct bsc_filter_request *req,
+			int *con_type,
+			char **imsi, struct bsc_filter_reject_cause *cause)
+{ return 0; }
+
+int bsc_msg_filter_data(struct gsm48_hdr *hdr48, size_t len,
+		struct bsc_filter_request *req,
+		struct bsc_filter_state *state,
+		struct bsc_filter_reject_cause *cause)
+{ return 0; }
+
+struct llist_head *bsc_access_lists(void)
+{ return NULL; }

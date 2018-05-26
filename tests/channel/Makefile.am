@@ -24,7 +24,8 @@ channel_test_SOURCES = \
 	$(NULL)
 
 channel_test_LDADD = \
-	$(top_builddir)/src/libbsc/libbsc.a \
+	$(top_builddir)/src/osmo-bsc/gsm_data.o \
+	$(top_builddir)/src/osmo-bsc/net_init.o \
 	$(LIBOSMOCORE_LIBS) \
 	$(LIBOSMOGSM_LIBS) \
 	$(LIBOSMOABIS_LIBS) \

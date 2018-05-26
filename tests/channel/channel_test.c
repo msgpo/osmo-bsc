@@ -25,9 +25,10 @@
 #include <osmocom/core/application.h>
 #include <osmocom/core/select.h>
 
-#include <osmocom/bsc/common_bsc.h>
 #include <osmocom/bsc/abis_rsl.h>
 #include <osmocom/bsc/debug.h>
+
+void *ctx = NULL;
 
 void test_bts_debug_print(void)
 {
@@ -38,7 +39,7 @@ void test_bts_debug_print(void)
 	printf("Testing the lchan printing:");
 
 	/* Create a dummy network */
-	network = bsc_network_init(tall_bsc_ctx);
+	network = gsm_network_init(ctx);
 	if (!network)
 		exit(1);
 	/* Add a BTS with some reasonanbly non-zero id */
@@ -98,7 +99,8 @@ static const struct log_info log_info = {
 
 int main(int argc, char **argv)
 {
-	osmo_init_logging2(NULL, &log_info);
+	ctx = talloc_named_const(NULL, 0, "channel_test");
+	osmo_init_logging2(ctx, &log_info);
 
 	test_dyn_ts_subslots();
 	test_bts_debug_print();
@@ -106,19 +108,4 @@ int main(int argc, char **argv)
 	return EXIT_SUCCESS;
 }
 
-void sms_alloc() {}
-void sms_free() {}
-void gsm48_secure_channel() {}
-void vty_out() {}
-
-void ipa_client_conn_clear_queue() {}
-void ipa_client_conn_close() {}
-void ipa_client_conn_create() {}
-void ipa_client_conn_destroy() {}
-void ipa_client_conn_open() {}
-void ipa_client_conn_send() {}
-void ipa_msg_push_header() {}
-void ipaccess_bts_handle_ccm() {}
-struct gsm_subscriber_connection *bsc_subscr_con_allocate(struct gsm_network *network) { return NULL; }
-
-struct tlv_definition nm_att_tlvdef;
+bool on_gsm_ts_init(struct gsm_bts_trx_ts *ts) { return true; }
