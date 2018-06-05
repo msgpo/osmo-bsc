@@ -182,4 +182,5 @@ AC_OUTPUT(
     tests/handover/Makefile
     doc/Makefile
     doc/examples/Makefile
+    doc/old/Makefile
     Makefile)
