@@ -54,8 +54,7 @@ static void handle_lu_request(struct gsm_subscriber_connection *conn,
 }
 
 /* extract a subscriber from the paging response */
-static struct bsc_subscr *extract_sub(struct gsm_subscriber_connection *conn,
-				   struct msgb *msg)
+struct bsc_subscr *extract_sub(struct gsm_subscriber_connection *conn, struct msgb *msg)
 {
 	uint8_t mi_type;
 	char mi_string[GSM48_MI_SIZE];

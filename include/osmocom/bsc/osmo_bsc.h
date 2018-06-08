@@ -39,4 +39,6 @@ void bsc_gen_location_state_trap(struct gsm_bts *bts);
 
 struct llist_head *bsc_access_lists(void);
 
+struct bsc_subscr *extract_sub(struct gsm_subscriber_connection *conn, struct msgb *msg);
+
 #endif
