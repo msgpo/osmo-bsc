@@ -42,6 +42,7 @@
 #include <osmocom/bsc/abis_rsl.h>
 #include <osmocom/bsc/abis_om2000.h>
 #include <osmocom/bsc/signal.h>
+#include <osmocom/bsc/timeslot_fsm.h>
 #include <osmocom/abis/e1_input.h>
 
 /* FIXME: move to libosmocore */
@@ -1295,8 +1296,7 @@ static uint8_t pchan2comb(enum gsm_phys_chan_config pchan)
 
 static uint8_t ts2comb(struct gsm_bts_trx_ts *ts)
 {
-	switch (ts->pchan) {
-	case GSM_PCHAN_TCH_F_PDCH:
+	if (ts->pchan_on_init == GSM_PCHAN_TCH_F_PDCH) {
 		LOGP(DNM, LOGL_ERROR, "%s pchan %s not intended for use"
 		     " with OM2000, use %s instead\n",
 		     gsm_ts_and_pchan_name(ts),
@@ -1306,11 +1306,8 @@ static uint8_t ts2comb(struct gsm_bts_trx_ts *ts)
 		 * when we try to send the ip.access specific RSL PDCH Act
 		 * message for it. Rather fail completely right now: */
 		return 0;
-	case GSM_PCHAN_TCH_F_TCH_H_PDCH:
-		return pchan2comb(GSM_PCHAN_TCH_F);
-	default:
-		return pchan2comb(ts->pchan);
 	}
+	return pchan2comb(ts->pchan_is);
 }
 
 static int put_freq_list(uint8_t *buf, uint16_t arfcn)
@@ -1373,7 +1370,7 @@ int abis_om2k_tx_ts_conf_req(struct gsm_bts_trx_ts *ts)
 	msgb_tv_put(msg, OM2K_DEI_EXT_RANGE, 0); /* Off */
 	/* Optional: Interference Rejection Combining */
 	msgb_tv_put(msg, OM2K_DEI_INTERF_REJ_COMB, 0x00);
-	switch (ts->pchan) {
+	switch (ts->pchan_is) {
 	case GSM_PCHAN_CCCH:
 		msgb_tv_put(msg, OM2K_DEI_BA_PA_MFRMS, 0x06);
 		msgb_tv_put(msg, OM2K_DEI_BS_AG_BKS_RES, 0x01);
@@ -1382,7 +1379,8 @@ int abis_om2k_tx_ts_conf_req(struct gsm_bts_trx_ts *ts)
 		msgb_tv_put(msg, OM2K_DEI_CCCH_OPTIONS, 0x01);
 		break;
 	case GSM_PCHAN_CCCH_SDCCH4:
-		msgb_tv_put(msg, OM2K_DEI_T3105, ts->trx->bts->network->T3105 / 10);
+		msgb_tv_put(msg, OM2K_DEI_T3105,
+			    T_def_get(ts->trx->bts->network->T_defs, 3105, T_MS, -1) / 10);
 		msgb_tv_put(msg, OM2K_DEI_NY1, 35);
 		msgb_tv_put(msg, OM2K_DEI_BA_PA_MFRMS, 0x06);
 		msgb_tv_put(msg, OM2K_DEI_CBCH_INDICATOR, 0);
@@ -1396,7 +1394,8 @@ int abis_om2k_tx_ts_conf_req(struct gsm_bts_trx_ts *ts)
 				  sizeof(icm_bound_params), icm_bound_params);
 		break;
 	case GSM_PCHAN_SDCCH8_SACCH8C:
-		msgb_tv_put(msg, OM2K_DEI_T3105, ts->trx->bts->network->T3105 / 10);
+		msgb_tv_put(msg, OM2K_DEI_T3105,
+			    T_def_get(ts->trx->bts->network->T_defs, 3105, T_MS, -1) / 10);
 		msgb_tv_put(msg, OM2K_DEI_NY1, 35);
 		msgb_tv_put(msg, OM2K_DEI_CBCH_INDICATOR, 0);
 		msgb_tv_put(msg, OM2K_DEI_TSC, gsm_ts_tsc(ts));
@@ -1406,7 +1405,8 @@ int abis_om2k_tx_ts_conf_req(struct gsm_bts_trx_ts *ts)
 				  sizeof(icm_bound_params), icm_bound_params);
 		break;
 	default:
-		msgb_tv_put(msg, OM2K_DEI_T3105, ts->trx->bts->network->T3105 / 10);
+		msgb_tv_put(msg, OM2K_DEI_T3105,
+			    T_def_get(ts->trx->bts->network->T_defs, 3105, T_MS, -1) / 10);
 		msgb_tv_put(msg, OM2K_DEI_NY1, 35);
 		msgb_tv_put(msg, OM2K_DEI_TSC, gsm_ts_tsc(ts));
 		/* Disable RF RESOURCE INDICATION on idle channels */
@@ -1414,7 +1414,7 @@ int abis_om2k_tx_ts_conf_req(struct gsm_bts_trx_ts *ts)
 		msgb_tv_fixed_put(msg, OM2K_DEI_ICM_BOUND_PARAMS,
 				  sizeof(icm_bound_params), icm_bound_params);
 		msgb_tv_put(msg, OM2K_DEI_TTA, 10); /* Timer for Time Alignment */
-		if (ts->pchan == GSM_PCHAN_TCH_H)
+		if (ts->pchan_is == GSM_PCHAN_TCH_H)
 			msgb_tv_put(msg, OM2K_DEI_ICM_CHAN_RATE, 1); /* TCH/H */
 		else
 			msgb_tv_put(msg, OM2K_DEI_ICM_CHAN_RATE, 0); /* TCH/F */
@@ -2740,7 +2740,8 @@ void abis_om2k_trx_init(struct gsm_bts_trx *trx)
 		struct gsm_bts_trx_ts *ts = &trx->ts[i];
 		om2k_mo_init(&ts->rbs2000.om2k_mo, OM2K_MO_CLS_TS,
 				bts->nr, trx->nr, i);
-		gsm_ts_check_init(ts);
+		OSMO_ASSERT(ts->fi);
+		osmo_fsm_inst_dispatch(ts->fi, TS_EV_OML_READY, NULL);
 	}
 }
 

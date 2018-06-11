@@ -27,7 +27,7 @@ msc {
 
 	bsc box bsc [label="Store RACH data in lchan->rqd_ref, rqd_ta"];
 	bsc -> bsc_lchan [label="lchan_allocate(FOR_MS_CHANNEL_REQUEST)"];
-	bsc_lchan abox bsc_lchan [label="LCHAN_ST_WAIT_ACTIV_ACK\nT3103"];
+	bsc_lchan abox bsc_lchan [label="LCHAN_ST_WAIT_ACTIV_ACK\nT3101"];
 	bsc_lchan note bsc_lchan [label="The lchan FSM knows that FOR_MS_CHANNEL_REQUEST is about
 		Immediate Assignment."];
 	bts <= bsc_lchan [label="RSL Chan Activ (Immediate Assignment)"];

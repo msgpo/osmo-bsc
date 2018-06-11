@@ -20,11 +20,14 @@ EXTRA_DIST = \
 
 gsm0408_test_SOURCES = \
 	gsm0408_test.c \
+	$(top_srcdir)/src/stubs/ts_fsm_stubs.c \
+	$(top_srcdir)/src/stubs/system_information_stubs.c \
 	$(NULL)
 
 gsm0408_test_LDADD = \
 	$(top_builddir)/src/osmo-bsc/arfcn_range_encode.o \
 	$(top_builddir)/src/osmo-bsc/gsm_data.o \
+	$(top_builddir)/src/osmo-bsc/gsm_timers.o \
 	$(top_builddir)/src/osmo-bsc/net_init.o \
 	$(top_builddir)/src/osmo-bsc/rest_octets.o \
 	$(top_builddir)/src/osmo-bsc/system_information.o \

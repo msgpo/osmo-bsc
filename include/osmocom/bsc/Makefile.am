@@ -5,6 +5,7 @@ noinst_HEADERS = \
 	abis_rsl.h \
 	acc_ramp.h \
 	arfcn_range_encode.h \
+	assignment_fsm.h \
 	bsc_msg_filter.h \
 	bsc_rll.h \
 	bsc_subscriber.h \
@@ -18,15 +19,19 @@ noinst_HEADERS = \
 	gsm_04_08_utils.h \
 	gsm_04_80.h \
 	gsm_data.h \
+	gsm_timers.h \
 	handover.h \
 	handover_cfg.h \
 	handover_decision.h \
 	handover_decision_2.h \
+	handover_fsm.h \
 	handover_vty.h \
 	ipaccess.h \
+	lchan_fsm.h \
 	meas_feed.h \
 	meas_rep.h \
 	misdn.h \
+	mgw_endpoint_fsm.h \
 	neighbor_ident.h \
 	network_listen.h \
 	openbscdefines.h \
@@ -43,6 +48,7 @@ noinst_HEADERS = \
 	rs232.h \
 	signal.h \
 	system_information.h \
+	timeslot_fsm.h \
 	ussd.h \
 	vty.h \
 	bsc_api.h \

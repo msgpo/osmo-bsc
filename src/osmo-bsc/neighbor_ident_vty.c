@@ -36,14 +36,26 @@ static struct neighbor_ident_list *g_neighbor_cells = NULL;
 
 /* Parse VTY parameters matching NEIGHBOR_IDENT_VTY_KEY_PARAMS. Pass a pointer so that argv[0] is the
  * ARFCN value followed by the BSIC keyword and value. vty *must* reference a BTS_NODE. */
-bool neighbor_ident_vty_parse_key_params(struct vty *vty, const char **argv, struct neighbor_ident_key *key)
+bool neighbor_ident_vty_parse_key_params(struct vty *vty, const char **argv,
+					 struct neighbor_ident_key *key)
 {
 	struct gsm_bts *bts = vty->index;
+
+	OSMO_ASSERT(vty->node == BTS_NODE);
+	OSMO_ASSERT(bts);
+
+	return neighbor_ident_bts_parse_key_params(vty, bts, argv, key);
+}
+
+/* same as neighbor_ident_vty_parse_key_params() but pass an explicit bts, so it works on any node. */
+bool neighbor_ident_bts_parse_key_params(struct vty *vty, struct gsm_bts *bts, const char **argv,
+					 struct neighbor_ident_key *key)
+{
 	const char *arfcn_str = argv[0];
 	const char *bsic_kind = argv[1];
 	const char *bsic_str = argv[2];
 
-	OSMO_ASSERT(vty->node == BTS_NODE && bts);
+	OSMO_ASSERT(bts);
 
 	*key = (struct neighbor_ident_key){
 		.from_bts = bts->nr,
@@ -81,7 +93,7 @@ static struct gsm_bts *neighbor_ident_vty_parse_bts_nr(struct vty *vty, const ch
 
 static struct gsm_bts *bts_by_cell_id(struct vty *vty, struct gsm0808_cell_id *cell_id)
 {
-	struct gsm_bts *bts = gsm_bts_by_cell_id(g_net, cell_id);
+	struct gsm_bts *bts = gsm_bts_by_cell_id(g_net, cell_id, 0);
 	if (!bts)
 		vty_out(vty, "%% No such BTS: %s%s\n", gsm0808_cell_id_name(cell_id), VTY_NEWLINE);
 	return bts;
@@ -250,7 +262,7 @@ static int add_remote_or_local_bts(struct vty *vty, const struct gsm0808_cell_id
 	}
 
 	/* Is there a local BTS that matches the cell_id? */
-	local_neigh = gsm_bts_by_cell_id(g_net, cell_id);
+	local_neigh = gsm_bts_by_cell_id(g_net, cell_id, 0);
 	if (local_neigh) {
 		/* But do the advertised ARFCN and BSIC match as intended?
 		 * The user may omit ARFCN and BSIC for local cells, but if they are provided,

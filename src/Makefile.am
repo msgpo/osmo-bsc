@@ -19,6 +19,10 @@ AM_LDFLAGS = \
 	$(COVERAGE_LDFLAGS) \
 	$(NULL)
 
+EXTRA_DIST = \
+	stubs/ts_fsm_stubs.c \
+	$(NULL)
+
 SUBDIRS = \
 	libfilter \
 	osmo-bsc \

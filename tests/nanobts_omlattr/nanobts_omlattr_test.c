@@ -191,6 +191,11 @@ static const struct log_info log_info = {
 	.num_cat = ARRAY_SIZE(log_categories),
 };
 
+static struct T_def gsm_network_T_defs[] = {
+	{ .T=3105, .default_val=100, .val=13, .unit=T_MS, .desc="Physical Information" },
+	{}
+};
+
 int main(int argc, char **argv)
 {
 	void *ctx;
@@ -207,6 +212,7 @@ int main(int argc, char **argv)
 	/* Allocate environmental structs (bts, net, trx) */
 	net = talloc_zero(ctx, struct gsm_network);
 	INIT_LLIST_HEAD(&net->bts_list);
+	net->T_defs = gsm_network_T_defs;
 	gsm_bts_model_register(&bts_model_nanobts);
 	bts = gsm_bts_alloc_register(net, GSM_BTS_TYPE_NANOBTS, 63);
 	OSMO_ASSERT(bts);

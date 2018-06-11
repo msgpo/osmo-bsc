@@ -1,0 +1,35 @@
+digraph G {
+rankdir=TB;
+	
+	WAIT_LCHAN_ACTIVE
+	WAIT_RR_ASS_COMPLETE
+	WAIT_LCHAN_ESTABLISHED
+	WAIT_MGW_ENDPOINT_TO_MSC
+	terminate [shape=box]
+	
+	gscon [label="conn FSM",shape=box3d];
+	gscon2 [label="conn FSM",shape=box3d];
+	lchan [label="lchan FSM",shape=box3d];
+	old_lchan [label="old lchan",shape=box3d];
+
+	invisible [style="invisible"]
+	invisible -> gscon [label="GSCON_EV_A_ASSIGNMENT_CMD",style=dashed]
+	invisible -> old_lchan [style=invisible,arrowhead=none]
+
+	gscon -> WAIT_LCHAN_ACTIVE [label="assignment_fsm_start()",style=dashed]
+        WAIT_LCHAN_ACTIVE -> lchan [label="lchan_activate()\nFOR_ASSIGNMENT",style=dashed]
+	lchan -> WAIT_LCHAN_ACTIVE [label="ASSIGNMENT_EV_\nLCHAN_\nACTIVE,ERROR",style=dashed]
+	lchan -> WAIT_LCHAN_ESTABLISHED [label="ASSIGNMENT_EV_\nLCHAN_\nESTABLISHED,ERROR",style=dashed]
+
+	WAIT_LCHAN_ACTIVE -> WAIT_RR_ASS_COMPLETE
+
+	WAIT_RR_ASS_COMPLETE -> old_lchan [label="RR Assignment\nCommand",style=dashed,constraint=false]
+	lchan -> WAIT_RR_ASS_COMPLETE [label="RR Assignment\nComplete",style=dashed]
+
+	WAIT_RR_ASS_COMPLETE -> WAIT_LCHAN_ESTABLISHED
+
+	WAIT_LCHAN_ESTABLISHED -> WAIT_MGW_ENDPOINT_TO_MSC [label="TCH"]
+	WAIT_LCHAN_ESTABLISHED -> terminate [label="non-TCH"]
+	WAIT_MGW_ENDPOINT_TO_MSC -> terminate
+	terminate -> gscon2 [label="GSCON_EV_\nASSIGNMENT_END",style=dashed]
+}

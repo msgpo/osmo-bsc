@@ -1,0 +1,26 @@
+digraph G {
+rankdir=TB;
+
+	invisible [style=invisible]
+	invisible -> mo [label="Measurement Report\nincluding neighbor\nBSS ARFCN",style=dashed]
+        mo [label="inter-BSC MO HO",shape=box];
+        msc [label="msc",shape=box3d];
+	new_bsc [label="new BSC",shape=box3d]
+	lchan [label="lchan",shape=box3d]
+        term [label="terminate",shape=box];
+
+	mo -> WAIT_HO_COMMAND [label="handover_start()"]
+	WAIT_HO_COMMAND -> msc [label="BSSMAP Handover\nRequired",style=dashed]
+	msc -> new_bsc [label="BSSMAP Handover\nRequest",style=dashed]
+	new_bsc -> msc [label="BSSMAP Handover\nRequest Ack",style=dashed]
+	msc -> WAIT_HO_COMMAND [label="BSSMAP Handover\nCommand",style=dashed]
+
+	WAIT_HO_COMMAND -> lchan [label="RR Handover\nCommand\nfrom new BSC",style=dashed]
+
+	WAIT_HO_COMMAND -> WAIT_CLEAR
+	msc -> WAIT_CLEAR [label="BSSMAP Clear Command",style=dashed]
+
+	WAIT_CLEAR -> term
+
+
+}

@@ -46,6 +46,7 @@ endif
 
 bs11_config_SOURCES = \
 	bs11_config.c \
+	$(top_srcdir)/src/stubs/ts_fsm_stubs.c \
 	stubs.c \
 	$(NULL)
 
@@ -54,6 +55,7 @@ bs11_config_LDADD = \
 	$(top_builddir)/src/osmo-bsc/bts_siemens_bs11.o \
 	$(top_builddir)/src/osmo-bsc/e1_config.o \
 	$(top_builddir)/src/osmo-bsc/gsm_data.o \
+	$(top_builddir)/src/osmo-bsc/gsm_timers.o \
 	$(top_builddir)/src/osmo-bsc/net_init.o \
 	$(LIBOSMOCORE_LIBS) \
 	$(LIBOSMOGSM_LIBS) \
@@ -117,11 +119,13 @@ osmo_meas_udp2db_CFLAGS = \
 
 meas_json_SOURCES = \
 	meas_json.c \
+	$(top_srcdir)/src/stubs/ts_fsm_stubs.c \
 	stubs.c \
 	$(NULL)
 
 meas_json_LDADD = \
 	$(top_builddir)/src/osmo-bsc/gsm_data.o \
+	$(top_builddir)/src/osmo-bsc/gsm_timers.o \
 	$(LIBOSMOCORE_LIBS) \
 	$(LIBOSMOGSM_LIBS) \
 	$(LIBOSMOABIS_LIBS) \

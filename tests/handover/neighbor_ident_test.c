@@ -28,7 +28,7 @@
 
 #include <osmocom/bsc/neighbor_ident.h>
 
-struct neighbor_ident_list *nil;
+static struct neighbor_ident_list *nil;
 
 static const struct neighbor_ident_key *k(int from_bts, uint16_t arfcn, enum bsic_kind kind, uint16_t bsic)
 {
@@ -106,7 +106,7 @@ static const struct gsm0808_cell_id_list2 lac2 = {
 	},
 };
 
-void print_cil(const struct gsm0808_cell_id_list2 *cil)
+static void print_cil(const struct gsm0808_cell_id_list2 *cil)
 {
 	unsigned int i;
 	if (!cil) {
@@ -133,7 +133,7 @@ void print_cil(const struct gsm0808_cell_id_list2 *cil)
 
 static int print_nil_i;
 
-bool nil_cb(const struct neighbor_ident_key *key, const struct gsm0808_cell_id_list2 *val,
+static bool nil_cb(const struct neighbor_ident_key *key, const struct gsm0808_cell_id_list2 *val,
 	    void *cb_data)
 {
 	printf(" %2d: %s\n", print_nil_i++, neighbor_ident_key_name(key));
@@ -141,7 +141,7 @@ bool nil_cb(const struct neighbor_ident_key *key, const struct gsm0808_cell_id_l
 	return true;
 }
 
-void print_nil()
+static void print_nil()
 {
 	print_nil_i = 0;
 	neighbor_ident_iter(nil, nil_cb, NULL);

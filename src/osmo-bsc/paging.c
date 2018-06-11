@@ -50,6 +50,8 @@
 #include <osmocom/bsc/gsm_data.h>
 #include <osmocom/bsc/chan_alloc.h>
 #include <osmocom/bsc/bsc_api.h>
+#include <osmocom/bsc/gsm_04_08_utils.h>
+#include <osmocom/bsc/bsc_subscr_conn_fsm.h>
 
 void *tall_paging_ctx = NULL;
 
@@ -314,7 +316,7 @@ static int _paging_request(struct gsm_bts *bts, struct bsc_subscr *bsub, int typ
 	req->chan_type = type;
 	req->msc = msc;
 	osmo_timer_setup(&req->T3113, paging_T3113_expired, req);
-	osmo_timer_schedule(&req->T3113, bts->network->T3113, 0);
+	osmo_timer_schedule(&req->T3113, T_def_get(bts->network->T_defs, 3113, T_S, -1), 0);
 	llist_add_tail(&req->entry, &bts_entry->pending_requests);
 	paging_schedule_if_needed(bts_entry);
 
@@ -392,6 +394,7 @@ void paging_request_stop(struct llist_head *bts_list,
 
 	log_set_context(LOG_CTX_BSC_SUBSCR, bsub);
 	conn->bsub = bsc_subscr_get(bsub);
+	gscon_update_id(conn);
 
 	/* Stop this first and dispatch the request */
 	if (_bts) {

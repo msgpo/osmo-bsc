@@ -41,15 +41,6 @@
  * or should OpenBSC always act as RTP relay/proxy in between (0) ? */
 int ipacc_rtp_direct = 1;
 
-static int gsm48_sendmsg(struct msgb *msg)
-{
-	if (msg->lchan)
-		msg->dst = msg->lchan->ts->trx->rsl_link;
-
-	msg->l3h = msg->data;
-	return rsl_data_request(msg, 0);
-}
-
 /* Section 9.1.8 / Table 9.9 */
 struct chreq {
 	uint8_t val;
@@ -225,76 +216,7 @@ int get_reason_by_chreq(uint8_t ra, int neci)
 	return GSM_CHREQ_REASON_OTHER;
 }
 
-static void mr_config_for_ms(struct gsm_lchan *lchan, struct msgb *msg)
-{
-	if (lchan->tch_mode == GSM48_CMODE_SPEECH_AMR)
-		msgb_tlv_put(msg, GSM48_IE_MUL_RATE_CFG, lchan->mr_ms_lv[0],
-			lchan->mr_ms_lv + 1);
-}
-
-/* 7.1.7 and 9.1.7: RR CHANnel RELease */
-int gsm48_send_rr_release(struct gsm_lchan *lchan)
-{
-	struct msgb *msg = gsm48_msgb_alloc_name("GSM 04.08 RR REL");
-	struct gsm48_hdr *gh = (struct gsm48_hdr *) msgb_put(msg, sizeof(*gh));
-	uint8_t *cause;
-
-	msg->lchan = lchan;
-	gh->proto_discr = GSM48_PDISC_RR;
-	gh->msg_type = GSM48_MT_RR_CHAN_REL;
-
-	cause = msgb_put(msg, 1);
-	cause[0] = GSM48_RR_CAUSE_NORMAL;
-
-	DEBUGP(DRR, "Sending Channel Release: Chan: Number: %d Type: %d\n",
-		lchan->nr, lchan->type);
-
-	/* Send actual release request to MS */
-	return gsm48_sendmsg(msg);
-}
-
-int send_siemens_mrpci(struct gsm_lchan *lchan,
-		       uint8_t *classmark2_lv)
-{
-	struct rsl_mrpci mrpci;
-
-	if (classmark2_lv[0] < 2)
-		return -EINVAL;
-
-	mrpci.power_class = classmark2_lv[1] & 0x7;
-	mrpci.vgcs_capable = classmark2_lv[2] & (1 << 1);
-	mrpci.vbs_capable = classmark2_lv[2] & (1 <<2);
-	mrpci.gsm_phase = (classmark2_lv[1]) >> 5 & 0x3;
-
-	return rsl_siemens_mrpci(lchan, &mrpci);
-}
-
-/* Chapter 9.1.9: Ciphering Mode Command */
-int gsm48_send_rr_ciph_mode(struct gsm_lchan *lchan, int want_imeisv)
-{
-	struct msgb *msg = gsm48_msgb_alloc_name("GSM 04.08 CIPH");
-	struct gsm48_hdr *gh;
-	uint8_t ciph_mod_set;
-
-	msg->lchan = lchan;
-
-	DEBUGP(DRR, "TX CIPHERING MODE CMD\n");
-
-	if (lchan->encr.alg_id <= RSL_ENC_ALG_A5(0))
-		ciph_mod_set = 0;
-	else
-		ciph_mod_set = (lchan->encr.alg_id-2)<<1 | 1;
-
-	gh = (struct gsm48_hdr *) msgb_put(msg, sizeof(*gh) + 1);
-	gh->proto_discr = GSM48_PDISC_RR;
-	gh->msg_type = GSM48_MT_RR_CIPH_M_CMD;
-	gh->data[0] = (want_imeisv & 0x1) << 4 | (ciph_mod_set & 0xf);
-
-	return rsl_encryption_cmd(msg);
-}
-
-static void gsm48_cell_desc(struct gsm48_cell_desc *cd,
-			    const struct gsm_bts *bts)
+void gsm48_cell_desc(struct gsm48_cell_desc *cd, const struct gsm_bts *bts)
 {
 	cd->ncc = (bts->bsic >> 3 & 0x7);
 	cd->bcc = (bts->bsic & 0x7);
@@ -350,15 +272,13 @@ int gsm48_multirate_config(uint8_t *lv, const struct amr_multirate_conf *mr, con
 #define GSM48_HOCMD_CCHDESC_LEN	16
 
 /* Chapter 9.1.15: Handover Command */
-int gsm48_send_ho_cmd(struct gsm_lchan *old_lchan, struct gsm_lchan *new_lchan,
-		      uint8_t power_command, uint8_t ho_ref)
+struct msgb *gsm48_make_ho_cmd(struct gsm_lchan *new_lchan, uint8_t power_command, uint8_t ho_ref)
 {
 	struct msgb *msg = gsm48_msgb_alloc_name("GSM 04.08 HO CMD");
 	struct gsm48_hdr *gh = (struct gsm48_hdr *) msgb_put(msg, sizeof(*gh));
 	struct gsm48_ho_cmd *ho =
 		(struct gsm48_ho_cmd *) msgb_put(msg, sizeof(*ho));
 
-	msg->lchan = old_lchan;
 	gh->proto_discr = GSM48_PDISC_RR;
 	gh->msg_type = GSM48_MT_RR_HANDO_CMD;
 
@@ -393,118 +313,7 @@ int gsm48_send_ho_cmd(struct gsm_lchan *old_lchan, struct gsm_lchan *new_lchan,
 		msgb_tlv_put(msg, GSM48_IE_MUL_RATE_CFG, new_lchan->mr_ms_lv[0],
 			new_lchan->mr_ms_lv + 1);
 
-	return gsm48_sendmsg(msg);
-}
-
-/* Chapter 9.1.2: Assignment Command */
-int gsm48_send_rr_ass_cmd(struct gsm_lchan *dest_lchan, struct gsm_lchan *lchan, uint8_t power_command)
-{
-	struct msgb *msg = gsm48_msgb_alloc_name("GSM 04.08 ASS CMD");
-	struct gsm48_hdr *gh = (struct gsm48_hdr *) msgb_put(msg, sizeof(*gh));
-	struct gsm48_ass_cmd *ass =
-		(struct gsm48_ass_cmd *) msgb_put(msg, sizeof(*ass));
-
-	DEBUGP(DRR, "-> ASSIGNMENT COMMAND tch_mode=0x%02x\n", lchan->tch_mode);
-
-	msg->lchan = dest_lchan;
-	gh->proto_discr = GSM48_PDISC_RR;
-	gh->msg_type = GSM48_MT_RR_ASS_CMD;
-
-	/*
-	 * fill the channel information element, this code
-	 * should probably be shared with rsl_rx_chan_rqd(),
-	 * gsm48_lchan_modify(). But beware that 10.5.2.5
-	 * 10.5.2.5.a have slightly different semantic for
-	 * the chan_desc. But as long as multi-slot configurations
-	 * are not used we seem to be fine.
-	 */
-	gsm48_lchan2chan_desc(&ass->chan_desc, lchan);
-	ass->power_command = power_command;
-
-	/* optional: cell channel description */
-
-	msgb_tv_put(msg, GSM48_IE_CHANMODE_1, lchan->tch_mode);
-
-	/* mobile allocation in case of hopping */
-	if (lchan->ts->hopping.enabled) {
-		msgb_tlv_put(msg, GSM48_IE_MA_BEFORE, lchan->ts->hopping.ma_len,
-			     lchan->ts->hopping.ma_data);
-	}
-
-	/* in case of multi rate we need to attach a config */
-	mr_config_for_ms(lchan, msg);
-
-	return gsm48_sendmsg(msg);
-}
-
-/* 9.1.5 Channel mode modify: Modify the mode on the MS side */
-int gsm48_lchan_modify(struct gsm_lchan *lchan, uint8_t mode)
-{
-	struct msgb *msg = gsm48_msgb_alloc_name("GSM 04.08 CHN MOD");
-	struct gsm48_hdr *gh = (struct gsm48_hdr *) msgb_put(msg, sizeof(*gh));
-	struct gsm48_chan_mode_modify *cmm =
-		(struct gsm48_chan_mode_modify *) msgb_put(msg, sizeof(*cmm));
-
-	DEBUGP(DRR, "-> CHANNEL MODE MODIFY mode=0x%02x\n", mode);
-
-	lchan->tch_mode = mode;
-	msg->lchan = lchan;
-	gh->proto_discr = GSM48_PDISC_RR;
-	gh->msg_type = GSM48_MT_RR_CHAN_MODE_MODIF;
-
-	/* fill the channel information element, this code
-	 * should probably be shared with rsl_rx_chan_rqd() */
-	gsm48_lchan2chan_desc(&cmm->chan_desc, lchan);
-	cmm->mode = mode;
-
-	/* in case of multi rate we need to attach a config */
-	mr_config_for_ms(lchan, msg);
-
-	return gsm48_sendmsg(msg);
-}
-
-int gsm48_rx_rr_modif_ack(struct msgb *msg)
-{
-	int rc;
-	struct gsm48_hdr *gh = msgb_l3(msg);
-	struct gsm48_chan_mode_modify *mod =
-				(struct gsm48_chan_mode_modify *) gh->data;
-
-	DEBUGP(DRR, "CHANNEL MODE MODIFY ACK\n");
-
-	if (mod->mode != msg->lchan->tch_mode) {
-		LOGP(DRR, LOGL_ERROR, "CHANNEL MODE change failed. Wanted: %d Got: %d\n",
-			msg->lchan->tch_mode, mod->mode);
-		return -1;
-	}
-
-	/* update the channel type */
-	switch (mod->mode) {
-	case GSM48_CMODE_SIGN:
-		msg->lchan->rsl_cmode = RSL_CMOD_SPD_SIGN;
-		break;
-	case GSM48_CMODE_SPEECH_V1:
-	case GSM48_CMODE_SPEECH_EFR:
-	case GSM48_CMODE_SPEECH_AMR:
-		msg->lchan->rsl_cmode = RSL_CMOD_SPD_SPEECH;
-		break;
-	case GSM48_CMODE_DATA_14k5:
-	case GSM48_CMODE_DATA_12k0:
-	case GSM48_CMODE_DATA_6k0:
-	case GSM48_CMODE_DATA_3k6:
-		msg->lchan->rsl_cmode = RSL_CMOD_SPD_DATA;
-		break;
-	}
-
-	/* We've successfully modified the MS side of the channel,
-	 * now go on to modify the BTS side of the channel */
-	rc = rsl_chan_mode_modify_req(msg->lchan);
-
-	/* FIXME: we not only need to do this after mode modify, but
-	 * also after channel activation */
-	if (is_ipaccess_bts(msg->lchan->ts->trx->bts) && mod->mode != GSM48_CMODE_SIGN)
-		rsl_ipacc_crcx(msg->lchan);
-	return rc;
+	return msg;
 }
 
 int gsm48_parse_meas_rep(struct gsm_meas_rep *rep, struct msgb *msg)
@@ -585,66 +394,6 @@ int gsm48_parse_meas_rep(struct gsm_meas_rep *rep, struct msgb *msg)
 	mrc->bsic = data[15] & 0x3f;
 
 	return 0;
-}
-
-/* 9.2.5 CM service accept */
-int gsm48_tx_mm_serv_ack(struct gsm_subscriber_connection *conn)
-{
-	struct msgb *msg = gsm48_msgb_alloc_name("GSM 04.08 SERV ACK");
-	struct gsm48_hdr *gh = (struct gsm48_hdr *) msgb_put(msg, sizeof(*gh));
-
-	msg->lchan = conn->lchan;
-
-	gh->proto_discr = GSM48_PDISC_MM;
-	gh->msg_type = GSM48_MT_MM_CM_SERV_ACC;
-
-	DEBUGP(DMM, "-> CM SERVICE ACK\n");
-
-	return gsm0808_submit_dtap(conn, msg, 0, 0);
-}
-
-/* 9.2.6 CM service reject */
-int gsm48_tx_mm_serv_rej(struct gsm_subscriber_connection *conn,
-				enum gsm48_reject_value value)
-{
-	struct msgb *msg;
-
-	msg = gsm48_create_mm_serv_rej(value);
-	if (!msg) {
-		LOGP(DMM, LOGL_ERROR, "Failed to allocate CM Service Reject.\n");
-		return -1;
-	}
-
-	DEBUGP(DMM, "-> CM SERVICE Reject cause: %d\n", value);
-
-	return gsm0808_submit_dtap(conn, msg, 0, 0);
-}
-
-/* 9.1.29 RR Status */
-struct msgb *gsm48_create_rr_status(uint8_t cause)
-{
-	struct msgb *msg;
-	struct gsm48_hdr *gh;
-
-	msg = gsm48_msgb_alloc_name("GSM 04.08 RR STATUS");
-	if (!msg)
-		return NULL;
-
-	gh = (struct gsm48_hdr *) msgb_put(msg, sizeof(*gh) + 1);
-	gh->proto_discr = GSM48_PDISC_RR;
-	gh->msg_type = GSM48_MT_RR_STATUS;
-	gh->data[0] = cause;
-
-	return msg;
-}
-
-/* 9.1.29 RR Status */
-int gsm48_tx_rr_status(struct gsm_subscriber_connection *conn, uint8_t cause)
-{
-	struct msgb *msg = gsm48_create_rr_status(cause);
-	if (!msg)
-		return -1;
-	return gsm0808_submit_dtap(conn, msg, 0, 0);
 }
 
 struct msgb *gsm48_create_mm_serv_rej(enum gsm48_reject_value value)
