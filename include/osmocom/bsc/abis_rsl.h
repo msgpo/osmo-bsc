@@ -110,5 +110,20 @@ void dyn_ts_init(struct gsm_bts_trx_ts *ts);
 int dyn_ts_switchover_start(struct gsm_bts_trx_ts *ts,
 			    enum gsm_phys_chan_config to_pchan);
 
+struct msgb *gsm48_create_rr_status(uint8_t cause);
+int gsm48_tx_rr_status(struct gsm_subscriber_connection *conn, uint8_t cause);
+
+int gsm0408_rcvmsg(struct msgb *msg, uint8_t link_id);
+int send_siemens_mrpci(struct gsm_lchan *lchan,
+		       uint8_t *classmark2_lv);
+
+int gsm48_rx_rr_modif_ack(struct msgb *msg);
+int gsm48_send_rr_release(struct gsm_lchan *lchan);
+int gsm48_send_rr_ciph_mode(struct gsm_lchan *lchan, int want_imeisv);
+int gsm48_send_ho_cmd(struct gsm_lchan *old_lchan, struct gsm_lchan *new_lchan,
+		      uint8_t power_command, uint8_t ho_ref);
+int gsm48_send_rr_ass_cmd(struct gsm_lchan *dest_lchan, struct gsm_lchan *lchan, uint8_t power_command);
+int gsm48_lchan_modify(struct gsm_lchan *lchan, uint8_t mode);
+
 #endif /* RSL_MT_H */
 
