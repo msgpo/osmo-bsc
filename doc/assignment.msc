@@ -6,7 +6,7 @@ msc {
 	ms note mgw_msc [label="lchan allocation sequence for BSSMAP Assignment Request"];
 
 	bsc_gscon <= mgw_msc [label="BSSMAP Assignment Request"];
-	bsc_gscon abox bsc_gscon [label="ST_ASSIGNMENT_\nWAIT_LCHAN"];
+	bsc_gscon abox bsc_gscon [label="ST_ASSIGNMENT_\nWAIT_LCHAN\nT10?"];
 
 	bsc_lchan <- bsc_gscon [label="lchan_select_by_chan_mode(chan_mode)"];
 	|||;
@@ -15,13 +15,13 @@ msc {
 	bsc_gscon abox bsc_gscon [label="ST_ACTIVE"];
 	---;
 	|||;
-	bsc_gscon box bsc_gscon [label="store lchan pointer in conn->lchan_for_assignment"];
+	bsc_gscon box bsc_gscon [label="store lchan pointer in conn->assignment.new_lchan"];
 	bsc_lchan <- bsc_gscon [label="lchan_activate(FOR_ASSIGNMENT)"];
 	...;
 	|||;
 	--- [label="on lchan FSM error or timeout"];
-	bsc_lchan -> bsc_gscon [label="GSCON_EV_LCHAN_ALLOC_ERROR"];
-	bsc_gscon box bsc_gscon [label="'forget' all about conn->lchan_for_assignment"];
+	bsc_lchan -> bsc_gscon [label="GSCON_EV_LCHAN_ERROR"];
+	bsc_gscon box bsc_gscon [label="'forget' all about conn->assignment.new_lchan"];
 	bsc_gscon => mgw_msc [label="BSSMAP Assignment Failure"];
 	bsc_gscon abox bsc_gscon [label="ST_ACTIVE"];
 	--- [label="END: 'on error'"];
@@ -49,9 +49,9 @@ msc {
 	bsc_gscon -> bsc_lchan [label="LCHAN_EV_MGW_ENDPOINT_ERROR"];
 	bsc_lchan note bsc_gscon [label="conn FSM timeout handler exits and relies on the lchan FSM
 		signalling error, which should actually happen immediately:"];
-	bsc_gscon <- bsc_lchan [label="GSCON_EV_LCHAN_ALLOC_ERROR"];
+	bsc_gscon <- bsc_lchan [label="GSCON_EV_LCHAN_ERROR"];
 	bsc_gscon abox bsc_gscon [label="ST_ACTIVE"];
-	bsc_gscon box bsc_gscon [label="'forget' all about conn->lchan_for_assignment"];
+	bsc_gscon box bsc_gscon [label="'forget' all about conn->assignment.new_lchan"];
 	bsc_gscon => mgw_msc [label="BSSMAP Assignment Failure"];
 	--- [label="END: 'On Timeout'"];
 	...;
@@ -67,13 +67,13 @@ msc {
 	...;
 
 	bsc_lchan -> bsc_gscon [label="GSCON_EV_LCHAN_ACTIVE"];
-	bsc_gscon abox bsc_gscon [label="ST_ASSIGNMENT_\nWAIT_COMPLETE\nT10, 6s"];
+	bsc_gscon abox bsc_gscon [label="ST_ASSIGNMENT_\nWAIT_COMPLETE\nT10, 6s? T3107?"];
 	ms <= bsc_gscon [label="RR Assignment"];
 	...;
 	--- [label="On Timeout"];
 	bsc_gscon => mgw_msc [label="BSSMAP Assignment Failure"];
 	bsc_gscon -> bsc_lchan [label="LCHAN_EV_LCHAN_RELEASE"];
-	bsc_gscon box bsc_gscon [label="'forget' all about conn->lchan_for_assignment"];
+	bsc_gscon box bsc_gscon [label="'forget' all about conn->assignment.new_lchan"];
 	--- [label="IF assignment_created_mgw_endpoint == true"];
 	bsc_gscon -> bsc_mgcp [label="mgcp_conn_delete()"];
 	bsc_gscon note bsc_mgcp [label="If the MGW endpoint didn't exist before the Assignment, release
@@ -84,7 +84,7 @@ msc {
 	...;
 	ms => bsc_gscon [label="RR Assignment Complete"];
 	bsc_gscon -> bsc_lchan [label="OLD lchan: LCHAN_EV_LCHAN_RELEASE"];
-	bsc_gscon box bsc_gscon [label="conn->lchan = conn->lchan_for_assignment"];
+	bsc_gscon box bsc_gscon [label="conn->lchan = conn->assignment.new_lchan"];
 	--- [label="IF: chan_mode a speech mode?"];
 	bsc_gscon abox bsc_gscon [label="ST_WAIT_MDCX_BTS"];
 	bsc_gscon -> bsc_mgcp [label="mgcp_conn_modify()"];

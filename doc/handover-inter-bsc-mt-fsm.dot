@@ -1,0 +1,42 @@
+digraph G {
+rankdir=TB;
+
+        mt [label="inter-BSC MT HO",shape=box];
+        gscon [label="gscon FSM",shape=box3d];
+        lchan [label="lchan FSM",shape=box3d];
+        msc [label="msc",shape=box3d];
+	old_bsc [label="old BSC",shape=box3d]
+	old_lchan [label="old lchan",shape=box3d]
+        term [label="terminate",shape=box];
+
+	invisible [style="invisible"]
+
+	mt -> old_bsc [style=dashed]
+	old_bsc -> msc [label="BSSMAP Handover Required",style=dashed]
+
+	invisible -> old_lchan [style=invisible,arrowhead=none]
+	msc -> gscon [label="BSSMAP Handover\nRequest",style=dashed]
+	gscon -> WAIT_LCHAN_ACTIVE [label="handover_start()",style=dashed]
+        WAIT_LCHAN_ACTIVE -> lchan [label="lchan_activate()\nFOR_HANDOVER",style=dashed]
+	lchan -> WAIT_LCHAN_ACTIVE [label="HO_EV_\nLCHAN_\nACTIVE,ERROR",style=dashed,constraint=false]
+        WAIT_LCHAN_ACTIVE -> WAIT_RR_HO_DETECT
+	
+        WAIT_RR_HO_DETECT -> msc [label="BSSMAP\nHandover\nAccept\nwith\nRR Handover\nCommand",style=dashed,constraint=false]
+        msc -> old_bsc -> old_lchan [label="RR Handover\nCommand",style=dashed]
+
+	lchan -> WAIT_RR_HO_DETECT [label="RR Handover\nDetect",style=dashed]
+	WAIT_RR_HO_DETECT -> WAIT_RR_HO_COMPLETE
+
+	lchan -> WAIT_RR_HO_COMPLETE [label="RR Handover\nComplete",style=dashed]
+	WAIT_RR_HO_COMPLETE -> WAIT_LCHAN_ESTABLISHED
+	lchan -> WAIT_LCHAN_ESTABLISHED [label="HO_EV_LCHAN_\nESTABLISHED",style=dashed]
+
+	WAIT_LCHAN_ESTABLISHED -> term [label="non-TCH"]
+	WAIT_LCHAN_ESTABLISHED -> WAIT_MGW_ENDPOINT_TO_MSC
+	WAIT_MGW_ENDPOINT_TO_MSC -> term [label="handover_end()",style=dashed]
+	term -> msc [label="BSSMAP Handover\nComplete\n/ Failure",style=dashed,constraint=false]
+
+	err [label="on error",shape=box,style=dashed]
+	err -> term
+
+}
