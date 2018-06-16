@@ -120,8 +120,8 @@ struct gsm_subscriber_connection {
 	struct gsm_classmark classmark;
 
 	/* Cache DTAP messages during handover/assignment (msgb_enqueue()/msgb_dequeue())*/
-	struct llist_head ho_dtap_cache;
-	unsigned int ho_dtap_cache_len;
+	struct llist_head dtap_cache;
+	unsigned int dtap_cache_len;
 
 	struct {
 		int failures;
