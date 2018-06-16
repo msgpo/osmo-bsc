@@ -15,8 +15,13 @@ msc: \
 	$(NULL)
 
 dot: \
+	$(builddir)/assignment-fsm.png \
 	$(builddir)/timeslot-fsm.png \
 	$(builddir)/lchan-fsm.png \
+	$(builddir)/mgw-endpoint-fsm.png \
+	$(builddir)/handover-intra-bsc-fsm.png \
+	$(builddir)/handover-inter-bsc-mo-fsm.png \
+	$(builddir)/handover-inter-bsc-mt-fsm.png \
 	$(NULL)
 
 $(builddir)/%.png: $(srcdir)/%.msc

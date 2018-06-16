@@ -13,7 +13,7 @@ msc {
 	bsc_lchan <- bsc_gscon [label="lchan_activate(lchan, FOR_HANDOVER)"];
 	...;
 	--- [label="on lchan FSM error or timeout"];
-	bsc_lchan -> bsc_gscon [label="GSCON_EV_LCHAN_ALLOC_ERROR"];
+	bsc_lchan -> bsc_gscon [label="GSCON_EV_LCHAN_ERROR"];
 	bsc_gscon box bsc_gscon [label="handover_end(fail)"];
 	ms note bsc_gscon [label="MS happily continues on the old lchan."];
 	bsc_gscon abox bsc_gscon [label="ST_ACTIVE"];
@@ -43,7 +43,7 @@ msc {
 	bsc_gscon -> bsc_lchan [label="LCHAN_EV_MGW_ENDPOINT_ERROR"];
 	bsc_lchan note bsc_gscon [label="conn FSM error handler exits and relies on the lchan FSM
 		signalling error, which should actually happen immediately:"];
-	bsc_gscon <- bsc_lchan [label="GSCON_EV_LCHAN_ALLOC_ERROR"];
+	bsc_gscon <- bsc_lchan [label="GSCON_EV_LCHAN_ERROR"];
 	bsc_gscon box bsc_gscon [label="handover_end(fail)"];
 	--- [label="IF handover_created_mgw_endpoint == true"];
 	bsc_gscon -> bsc_mgcp [label="mgcp_conn_delete()"];

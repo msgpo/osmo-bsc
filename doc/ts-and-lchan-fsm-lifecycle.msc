@@ -71,7 +71,7 @@ msc {
 
 	bsc_ts -> bsc_lchan [label="LCHAN_EV_TS_READY"];
 	bsc_lchan note bsc_lchan [label="RSL Chan Alloc and so fort..."];
-	bsc_lchan abox bsc_lchan [label="LCHAN_ST_ACTIVE"];
+	bsc_lchan abox bsc_lchan [label="LCHAN_ST_ESTABLISHED"];
 	...;
 	bsc -> bsc_lchan [label="LCHAN_EV_RELEASE"];
 	bsc_lchan note bsc_lchan [label="...RSL RF Chan Release..."];

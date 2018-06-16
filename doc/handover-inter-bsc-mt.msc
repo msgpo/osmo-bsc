@@ -13,7 +13,7 @@ msc {
 	bsc_lchan abox bsc_lchan [label="LCHAN_ST_WAIT_TS_READY"];
 	...;
 	--- [label="on no lchan, lchan FSM error or timeout"];
-	bsc_lchan -> bsc_gscon [label="GSCON_EV_LCHAN_ALLOC_ERROR"];
+	bsc_lchan -> bsc_gscon [label="GSCON_EV_LCHAN_ERROR"];
 	bsc_gscon box bsc_gscon [label="handover_end(fail)"];
 	bsc_gscon => mgw_msc [label="BSSMAP Handover Failure"];
 	ms note bsc_gscon [label="MS happily continues on the old lchan."];
@@ -39,7 +39,7 @@ msc {
 	bsc_gscon -> bsc_lchan [label="LCHAN_EV_MGW_ENDPOINT_ERROR"];
 	bsc_lchan note bsc_gscon [label="conn FSM error handler exits and relies on the lchan FSM
 		signalling error, which should actually happen immediately:"];
-	bsc_gscon <- bsc_lchan [label="GSCON_EV_LCHAN_ALLOC_ERROR"];
+	bsc_gscon <- bsc_lchan [label="GSCON_EV_LCHAN_ERROR"];
 	bsc_gscon -> bsc_mgcp [label="mgcp_conn_delete()"];
 	bsc_gscon box bsc_gscon [label="handover_end(fail)"];
 	bsc_gscon => mgw_msc [label="BSSMAP Handover Failure"];
@@ -86,7 +86,7 @@ msc {
 		this:"];
 	bsc_lchan abox bsc_lchan [label="LCHAN_ST_WAIT_RLL_ESTABLISH"];
 	ms => bsc_lchan [label="RLL Establish Ind"];
-	bsc_lchan abox bsc_lchan [label="LCHAN_ST_ACTIVE"];
+	bsc_lchan abox bsc_lchan [label="LCHAN_ST_ESTABLISHED"];
 	bsc_lchan -> bsc_gscon [label="GSCON_EV_LCHAN_ACTIVE"];
 	bsc_gscon abox bsc_gscon [label="ST_HANDOVER_MT_\nWAIT_HO_ACCEPT\nsanity timer?"];
 	bsc_gscon box bsc_gscon [label="Compose RR Handover Command"];

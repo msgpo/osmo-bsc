@@ -6,7 +6,7 @@ msc {
 	ms note bsc_gscon [label="various lchan release scenarios"];
 	
 	ms rbox msc_ [label="MSC releases"];
-	bsc_lchan abox bsc_lchan [label="LCHAN_ST_ACTIVE"];
+	bsc_lchan abox bsc_lchan [label="LCHAN_ST_ESTABLISHED"];
 	bsc_gscon abox bsc_gscon [label="ST_ACTIVE"];
 	bsc_gscon <= msc_ [label="BSSMAP Clear Command"];
 	bsc_gscon abox bsc_gscon [label="ST_CLEARING"];

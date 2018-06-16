@@ -1,0 +1,22 @@
+digraph G {
+rankdir=TB;
+	UNUSED
+	WAIT_MGW_RESPONSE
+	IN_USE
+	WAIT_DLCX_ALL
+	terminate [shape=box]
+
+	other [label="other FSM",shape=box3d]
+	other -> UNUSED [label="mgw_{crcx,mdcx}_{bts,msc}()",style=dashed]
+
+	UNUSED -> WAIT_MGW_RESPONSE
+	WAIT_MGW_RESPONSE -> IN_USE
+	IN_USE -> {WAIT_MGW_RESPONSE,WAIT_DLCX_ALL}
+
+	other2 [label="other FSM",shape=box3d]
+	other2 -> IN_USE [label="mgw_{crcx,mdcx,dlcx}_{bts,msc}()",style=dashed]
+	WAIT_DLCX_ALL -> terminate
+
+	IN_USE -> other2 [label="OTHER_EV_*",style=dashed]
+	IN_USE -> UNUSED [label="last DLCX"]
+}

@@ -72,7 +72,7 @@ msc {
 	bsc_gscon note bsc_gscon [label="conn FSM should fire on CRCX timeout"];
 	bsc_lchan <- bsc_gscon [label="LCHAN_EV_MGW_ENDPOINT_ERROR"];
 	bsc_gscon note bsc_gscon [label="conn FSM should not assume anything and wait for
-		GSCON_EV_LCHAN_ALLOC_ERROR"];
+		GSCON_EV_LCHAN_ERROR"];
 	bsc_lchan rbox bsc_lchan [label="Do 'On any error'"];
 	bsc_lchan abox bsc_lchan [label="LCHAN_ST_UNUSED"];
 	bsc_ts <- bsc_lchan [label="TS_EV_LCHAN_UNUSED"];
@@ -125,7 +125,7 @@ msc {
 	---;
 	...;
 	bts => bsc_lchan [label="RLL Establish Ind"];
-	bsc_lchan abox bsc_lchan [label="LCHAN_ST_ACTIVE"];
+	bsc_lchan abox bsc_lchan [label="LCHAN_ST_ESTABLISHED"];
 	|||;
 	|||;
 	bts rbox mgw_msc [label="modes FOR_ASSIGNMENT and FOR_HANDOVER"];
@@ -142,7 +142,7 @@ msc {
 	bsc_lchan abox bsc_lchan [label="LCHAN_ST_WAIT_\nRLL_ESTABLISH\nT3101"];
 	...;
 	--- [label="on timeout"];
-	bsc_lchan -> bsc_gscon [label="GSCON_EV_LCHAN_ALLOC_ERROR"];
+	bsc_lchan -> bsc_gscon [label="GSCON_EV_LCHAN_ERROR"];
 	bsc_lchan -> bsc_lchan [label="lchan_fsm_pre_rf_release()"];
 	---;
 	...;
@@ -166,7 +166,7 @@ msc {
 	bts <= bsc_lchan [label="IPACC CRCX"];
 	...;
 	--- [label="on timeout"];
-	bsc_lchan -> bsc_gscon [label="GSCON_EV_LCHAN_ALLOC_ERROR"];
+	bsc_lchan -> bsc_gscon [label="GSCON_EV_LCHAN_ERROR"];
 	bsc_lchan -> bsc_lchan [label="lchan_graceful_release()"];
 	---;
 	...;
@@ -182,14 +182,14 @@ msc {
 		this; SCCPlite: the RTP port is already known from the timeslot+multiplex information."];
 	...;
 	--- [label="on timeout"];
-	bsc_lchan -> bsc_gscon [label="GSCON_EV_LCHAN_ALLOC_ERROR"];
+	bsc_lchan -> bsc_gscon [label="GSCON_EV_LCHAN_ERROR"];
 	bsc_lchan -> bsc_lchan [label="lchan_graceful_release()"];
 	---;
 	...;
 	bts => bsc_lchan [label="IPACC MDCX ACK"];
 	--- [label="END: is BTS using IPA Abis? (osmo-bts, ip.access)"];
 	|||;
-	bsc_lchan abox bsc_lchan [label="LCHAN_ST_ACTIVE"];
+	bsc_lchan abox bsc_lchan [label="LCHAN_ST_ESTABLISHED"];
 	bsc_lchan box bsc_lchan [label="lchan_fsm_post_lchan_activ()"];
 	bsc_lchan -> bsc_gscon [label="GSCON_EV_LCHAN_ACTIVE"];
 	bts <= bsc_gscon [label="RR Assignment",ID="BSSMAP Assignment Request"];
@@ -288,7 +288,7 @@ msc {
 	bts <= bsc_lchan [label="RR Immediate Assign Reject"];
 	|||;
 	--- [label="IF FOR_ASSIGNMENT or FOR_HANDOVER"];
-	bsc_lchan -> bsc_gscon [label="GSCON_EV_LCHAN_ALLOC_ERROR"];
+	bsc_lchan -> bsc_gscon [label="GSCON_EV_LCHAN_ERROR"];
 	bsc_gscon note bsc_gscon [label="conn FSM shall immediately 'forget' the lchan"];
 	bsc_gscon => mgw_msc [label="BSSMAP\nAssignment Failure",ID=FOR_ASSIGNMENT];
 	bsc_gscon => mgw_msc [label="BSSMAP\nHandover Failure",ID="inter-BSC-MT HO"];
