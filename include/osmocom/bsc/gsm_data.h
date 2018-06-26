@@ -36,8 +36,6 @@
 
 #define GSM_T3122_DEFAULT 10
 
-#define GSM_T3122_DEFAULT 10
-
 struct mgcp_client_conf;
 struct mgcp_client;
 struct mgcp_ctx;
@@ -260,16 +258,22 @@ struct gsm_subscriber_connection {
 		uint32_t rtp_ip;
 		int rtp_port;
 
+		/* RTP address where the MSC expects us to send the RTP stream coming from the BTS. */
 		char msc_assigned_rtp_addr[INET_ADDRSTRLEN];
 		uint16_t msc_assigned_rtp_port;
 
+		/* The endpoint at the MGW used to join both BTS and MSC side connections, e.g.
+		 * "rtpbridge/23@mgw". */
 		struct mgw_endpoint *mgw_endpoint;
+
+		/* The connection identifier of the mgw_endpoint used to transceive RTP towards the MSC.
+		 * (The BTS side CI is handled by struct gsm_lchan and the lchan_fsm.) */
 		struct mgwep_ci *mgw_endpoint_ci_msc;
 
-		/* Channel rate flag, FR=1, HR=0, Invalid=-1 */
+		/* Channel rate flag requested by the MSC, FR=1, HR=0, Invalid=-1 */
 		int full_rate;
 
-		/* Channel mode flag (signaling or voice channel) */
+		/* Channel mode requested by the MSC (signalling or voice channel) */
 		enum gsm48_chan_mode chan_mode;
 
 	} user_plane;
@@ -515,7 +519,8 @@ struct gsm_lchan {
 
 	/* There is an RSL error cause of value 0, so we need a separate flag. */
 	bool release_in_error;
-	uint8_t error_cause;
+	/* RSL error code, RSL_ERR_* */
+	uint8_t rsl_error_cause;
 
 	/* The logical channel type */
 	enum gsm_chan_t type;

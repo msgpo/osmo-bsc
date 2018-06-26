@@ -563,9 +563,9 @@ static void lchan_fsm_wait_activ_ack(struct osmo_fsm_inst *fi, uint32_t event, v
 	case LCHAN_EV_RSL_CHAN_ACTIV_NACK:
 		if (data) {
 			uint32_t next_state;
-			lchan->error_cause = *(uint8_t*)data;
+			lchan->rsl_error_cause = *(uint8_t*)data;
 			lchan->release_in_error = true;
-			if (lchan->error_cause != RSL_ERR_RCH_ALR_ACTV_ALLOC)
+			if (lchan->rsl_error_cause != RSL_ERR_RCH_ALR_ACTV_ALLOC)
 				next_state = LCHAN_ST_BORKEN;
 			else
 				/* Taking this over from legacy code: send an RF Chan Release even though
@@ -573,9 +573,9 @@ static void lchan_fsm_wait_activ_ack(struct osmo_fsm_inst *fi, uint32_t event, v
 				next_state = LCHAN_ST_WAIT_RF_RELEASE_ACK;
 
 			lchan_fail_to(next_state, "Chan Activ NACK: %s (0x%x)",
-				      rsl_err_name(lchan->error_cause), lchan->error_cause);
+				      rsl_err_name(lchan->rsl_error_cause), lchan->rsl_error_cause);
 		} else {
-			lchan->error_cause = RSL_ERR_IE_NONEXIST;
+			lchan->rsl_error_cause = RSL_ERR_IE_NONEXIST;
 			lchan->release_in_error = true;
 			lchan_fail_to(LCHAN_ST_BORKEN, "Chan Activ NACK without cause IE");
 		}
@@ -1063,7 +1063,7 @@ static void lchan_fsm_wait_rf_release_ack(struct osmo_fsm_inst *fi, uint32_t eve
 	switch (event) {
 
 	case LCHAN_EV_RSL_RF_CHAN_REL_ACK:
-		if (lchan->error_cause)
+		if (lchan->rsl_error_cause)
 			lchan_fsm_state_chg(LCHAN_ST_WAIT_AFTER_ERROR);
 		else
 			lchan_fsm_state_chg(LCHAN_ST_UNUSED);
@@ -1383,7 +1383,7 @@ void lchan_release(struct gsm_lchan *lchan, bool sacch_deact,
 		return;
 	struct osmo_fsm_inst *fi = lchan->fi;
 	lchan->release_in_error = err;
-	lchan->error_cause = cause_rr;
+	lchan->rsl_error_cause = cause_rr;
 	lchan->deact_sacch = sacch_deact;
 
 	/* This would also happen later, but better to do this a sooner. */

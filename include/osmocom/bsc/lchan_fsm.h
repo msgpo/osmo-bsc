@@ -50,7 +50,7 @@ enum lchan_fsm_event {
 	LCHAN_EV_RSL_RF_CHAN_REL_ACK,
 	LCHAN_EV_RLL_ERR_IND,
 
-	/* FIXME: not yet implemented: Chan Mode Modify */
+	/* FIXME: not yet implemented: Chan Mode Modify, see assignment_fsm_start(). */
 	LCHAN_EV_CHAN_MODE_MODIF_ACK,
 	LCHAN_EV_CHAN_MODE_MODIF_ERROR,
 };

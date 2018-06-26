@@ -1712,7 +1712,7 @@ bool sockaddr_to_str_and_uint(char *rtp_addr, size_t rtp_addr_len, uint16_t *rtp
 	const struct sockaddr_in *sin;
 
 	sin = (const struct sockaddr_in *)sa;
-	*rtp_port = osmo_ntohs(sin->sin_port);
+	*rtp_port = ntohs(sin->sin_port);
 
 	rc = osmo_strlcpy(rtp_addr, inet_ntoa(sin->sin_addr), rtp_addr_len);
 	if (rc <= 0 || rc >= rtp_addr_len)

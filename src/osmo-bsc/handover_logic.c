@@ -96,7 +96,7 @@ static void ho_meas_rep(struct gsm_meas_rep *mr)
 
 /* Count ongoing handovers within the given BTS.
  * ho_scopes is an OR'd combination of enum handover_scope values to include in the count. */
-int handover_count(struct gsm_bts *bts, int ho_scopes)
+int bts_handover_count(struct gsm_bts *bts, int ho_scopes)
 {
 	struct gsm_bts_trx *trx;
 	int count = 0;

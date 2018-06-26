@@ -371,7 +371,7 @@ bool mgwep_ci_get_crcx_info_to_sockaddr(const struct mgwep_ci *ci, struct sockad
 }
 
 
-struct state_timeout mgwep_fsm_timeouts[32] = {
+static const struct state_timeout mgwep_fsm_timeouts[32] = {
 	[MGWEP_ST_WAIT_MGW_RESPONSE] = { .T=23042 },
 };
 
@@ -681,7 +681,7 @@ static const struct osmo_fsm_state mgwep_fsm_states[] = {
 	},
 };
 
-int mgwep_fsm_timer_cb(struct osmo_fsm_inst *fi)
+static int mgwep_fsm_timer_cb(struct osmo_fsm_inst *fi)
 {
 	int i;
 	GET_MGWEP();

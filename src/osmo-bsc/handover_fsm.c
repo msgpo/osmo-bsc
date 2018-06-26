@@ -62,7 +62,8 @@
 	     bsc_subscr_name(conn->bsub), \
 	     handover_scope_name(conn->ho.scope)
 
-/* Assume presence of local var 'conn' as struct gsm_subscriber_connection */
+/* Assume presence of local var 'conn' as struct gsm_subscriber_connection.
+ * This is a macro to preserve the source file and line number in logging. */
 #define ho_count(counter) do { \
 		LOG_HO(conn, LOGL_DEBUG, "incrementing rate counter: %s %s", \
 		       bsc_ctr_description[counter].name, \
@@ -146,7 +147,7 @@ static struct osmo_fsm ho_fsm;
 	GET_CONN(); \
 	struct handover *ho = &conn->ho
 
-struct state_timeout ho_fsm_timeouts[32] = {
+static const struct state_timeout ho_fsm_timeouts[32] = {
 	[HO_ST_WAIT_LCHAN_ACTIVE] = { .T = 23042 },
 	[HO_ST_WAIT_RR_HO_DETECT] = { .T = 23042 },
 	[HO_ST_WAIT_RR_HO_COMPLETE] = { .T = 23042 },
@@ -642,7 +643,6 @@ static int result_counter(enum handover_scope scope, enum handover_result result
 		return result_counter_INTER_BSC_HO_MO(result);
 	case HO_INTER_BSC_MT:
 		return result_counter_INTER_BSC_HO_MT(result);
-		return result_counter_HANDOVER(result);
 	}
 }
 

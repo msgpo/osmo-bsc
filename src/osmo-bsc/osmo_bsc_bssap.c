@@ -754,7 +754,8 @@ static int bssmap_handle_handover_cmd(struct gsm_subscriber_connection *conn,
 	struct tlv_parsed tp;
 
 	if (!conn->ho.fi) {
-		LOGP(DMSC, LOGL_ERROR, "Received Handover Command, but no handover was requested");
+		LOGPFSML(conn->fi, LOGL_ERROR,
+			 "Received Handover Command, but no handover was requested");
 		/* Should we actually allow the MSC to make us handover without us having requested it
 		 * first? Doesn't make any practical sense AFAICT. */
 		return -EINVAL;
@@ -764,7 +765,9 @@ static int bssmap_handle_handover_cmd(struct gsm_subscriber_connection *conn,
 
 	/* Check for channel type element, if its missing, immediately reject */
 	if (!TLVP_PRESENT(&tp, GSM0808_IE_LAYER_3_INFORMATION)) {
-		LOGP(DMSC, LOGL_ERROR, "Mandatory IE not present: Layer 3 Information\n");
+		LOGPFSML(conn->fi, LOGL_ERROR,
+			 "Received Handover Command,"
+			 " but mandatory IE not present: Layer 3 Information\n");
 		goto reject;
 	}
 

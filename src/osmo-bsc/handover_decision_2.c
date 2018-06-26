@@ -578,7 +578,7 @@ static uint8_t check_requirements(struct gsm_lchan *lchan, struct gsm_bts *bts, 
 
 	/* the maximum number of unsynchonized handovers must no be exceeded */
 	if (current_bts != bts
-	    && handover_count(bts, HO_SCOPE_ALL) >= ho_get_hodec2_ho_max(bts->ho)) {
+	    && bts_handover_count(bts, HO_SCOPE_ALL) >= ho_get_hodec2_ho_max(bts->ho)) {
 		LOGPHOLCHANTOBTS(lchan, bts, LOGL_DEBUG,
 				 "not a candidate, number of allowed handovers (%d) would be exceeded\n",
 				 ho_get_hodec2_ho_max(bts->ho));

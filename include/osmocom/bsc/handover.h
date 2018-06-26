@@ -29,7 +29,7 @@ extern const struct value_string handover_result_names[];
 inline static const char *handover_result_name(enum handover_result val)
 { return get_value_string(handover_result_names, val); }
 
-int handover_count(struct gsm_bts *bts, int ho_scopes);
+int bts_handover_count(struct gsm_bts *bts, int ho_scopes);
 
 /* Handover decision algorithms' actions to take on incoming handover-relevant events.
  *

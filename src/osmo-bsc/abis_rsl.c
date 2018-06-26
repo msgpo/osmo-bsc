@@ -177,12 +177,21 @@ static int build_encr_info(uint8_t *out, struct gsm_lchan *lchan)
 	return lchan->encr.key_len + 1;
 }
 
-static const char *rsl_cause_name(struct tlv_parsed *tp)
+/* If the TLV contain an RSL Cause IE, return the RSL cause name and point *rsl_cause_pp at the cause
+ * value. If there is no Cause IE, return NULL and write NULL to *rsl_cause_pp. If NULL is passed as
+ * rsl_cause_pp, ignore it. Implementation choice: presence of a Cause IE cannot be indicated by a zero
+ * cause, because that would mean RSL_ERR_RADIO_IF_FAIL; a pointer-to-pointer can return NULL or point to
+ * a cause value. */
+static const char *rsl_cause_name(struct tlv_parsed *tp, const uint8_t **rsl_cause_pp)
 {
 	static char buf[128];
+	if (rsl_cause_pp)
+		*rsl_cause_pp = NULL;
 
 	if (TLVP_PRESENT(tp, RSL_IE_CAUSE)) {
 		const uint8_t *cause = TLVP_VAL(tp, RSL_IE_CAUSE);
+		if (rsl_cause_pp)
+			*rsl_cause_pp = cause;
 		snprintf(buf, sizeof(buf), " (cause=%s [ %s])",
 			 rsl_err_name(*cause),
 			 osmo_hexdump(cause, TLVP_LEN(tp, RSL_IE_CAUSE)));
@@ -848,7 +857,7 @@ static int rsl_rx_chan_act_nack(struct msgb *msg)
 	struct abis_rsl_dchan_hdr *dh = msgb_l2(msg);
 	struct tlv_parsed tp;
 	struct gsm_lchan *lchan = msg->lchan;
-	const uint8_t *cause = NULL;
+	const uint8_t *cause_p;
 
 	rate_ctr_inc(&msg->lchan->ts->trx->bts->bts_ctrs->ctr[BTS_CTR_CHAN_ACT_NACK]);
 
@@ -859,12 +868,12 @@ static int rsl_rx_chan_act_nack(struct msgb *msg)
 	}
 
 	rsl_tlv_parse(&tp, dh->data, msgb_l2len(msg)-sizeof(*dh));
-	LOG_LCHAN(lchan, LOGL_ERROR, "CHANNEL ACTIVATE NACK%s", rsl_cause_name(&tp));
+	LOG_LCHAN(lchan, LOGL_ERROR, "CHANNEL ACTIVATE NACK%s", rsl_cause_name(&tp, &cause_p));
 
 	if (msg_for_osmocom_dyn_ts(msg))
-		osmo_fsm_inst_dispatch(lchan->ts->fi, TS_EV_PDCH_ACT_NACK, (void*)cause);
+		osmo_fsm_inst_dispatch(lchan->ts->fi, TS_EV_PDCH_ACT_NACK, (void*)cause_p);
 	else
-		osmo_fsm_inst_dispatch(lchan->fi, LCHAN_EV_RSL_CHAN_ACTIV_NACK, (void*)cause);
+		osmo_fsm_inst_dispatch(lchan->fi, LCHAN_EV_RSL_CHAN_ACTIV_NACK, (void*)cause_p);
 	return 0;
 }
 
@@ -874,18 +883,21 @@ static int rsl_rx_conn_fail(struct msgb *msg)
 	struct abis_rsl_dchan_hdr *dh = msgb_l2(msg);
 	struct gsm_lchan *lchan = msg->lchan;
 	struct tlv_parsed tp;
-	uint8_t cause = 0;
+	const uint8_t *cause_p;
 
 	rsl_tlv_parse(&tp, dh->data, msgb_l2len(msg)-sizeof(*dh));
 
-	LOG_LCHAN(lchan, LOGL_ERROR, "CONNECTION FAIL%s", rsl_cause_name(&tp));
+	LOG_LCHAN(lchan, LOGL_ERROR, "CONNECTION FAIL%s", rsl_cause_name(&tp, &cause_p));
 
 	rate_ctr_inc(&lchan->ts->trx->bts->bts_ctrs->ctr[BTS_CTR_CHAN_RF_FAIL]);
 
+	/* If the lchan is associated with a conn, we shall notify the MSC of the RSL Conn Failure, and
+	 * the connection will presumably be torn down and lead to an lchan release. During initial
+	 * Channel Request from the MS, an lchan has no conn yet, so in that case release now. */
 	if (!lchan->conn) {
-		lchan_release(lchan, false, true, cause);
+		lchan_release(lchan, false, true, *cause_p);
 	} else
-		osmo_fsm_inst_dispatch(lchan->conn->fi, GSCON_EV_RSL_CONN_FAIL, &cause);
+		osmo_fsm_inst_dispatch(lchan->conn->fi, GSCON_EV_RSL_CONN_FAIL, (void*)cause_p);
 
 	return 0;
 }
@@ -1193,7 +1205,7 @@ static int rsl_rx_error_rep(struct msgb *msg)
 	rsl_tlv_parse(&tp, rslh->data, msgb_l2len(msg)-sizeof(*rslh));
 
 	LOGP(DRSL, LOGL_ERROR, "%s ERROR REPORT%s\n",
-	     gsm_trx_name(sign_link->trx), rsl_cause_name(&tp));
+	     gsm_trx_name(sign_link->trx), rsl_cause_name(&tp, NULL));
 
 	return 0;
 }
@@ -1908,7 +1920,7 @@ static int abis_rsl_rx_ipacc_dlcx_ind(struct msgb *msg)
 
 	rsl_tlv_parse(&tv, dh->data, msgb_l2len(msg)-sizeof(*dh));
 	LOG_LCHAN(msg->lchan, LOGL_NOTICE, "Rx IPACC DLCX IND%s",
-		  rsl_cause_name(&tv));
+		  rsl_cause_name(&tv, NULL));
 
 	return 0;
 }

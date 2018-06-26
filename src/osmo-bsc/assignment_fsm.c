@@ -45,7 +45,7 @@ static struct osmo_fsm assignment_fsm;
 	struct gsm_subscriber_connection *conn = fi->priv; \
 	OSMO_ASSERT((fi)->fsm == &assignment_fsm && (fi)->priv)
 
-struct state_timeout assignment_fsm_timeouts[32] = {
+static const struct state_timeout assignment_fsm_timeouts[32] = {
 	[ASSIGNMENT_ST_WAIT_LCHAN_ACTIVE] = { .T=10 },
 	[ASSIGNMENT_ST_WAIT_RR_ASS_COMPLETE] = { .keep_timer=true },
 	[ASSIGNMENT_ST_WAIT_LCHAN_ESTABLISHED] = { .keep_timer=true },
@@ -346,19 +346,12 @@ void assignment_fsm_start(struct gsm_subscriber_connection *conn, struct gsm_bts
 			return;
 		}
 
-		/* FIXME */
+		/* FIXME: send Channel Mode Modify to put the current lchan in the right mode, and kick
+		 * off its RTP stream setup code path. See gsm48_lchan_modify() and
+		 * gsm48_rx_rr_modif_ack(), and see lchan_fsm.h LCHAN_EV_CHAN_MODE_MODIF_* */
 		LOG_ASSIGNMENT(conn, LOGL_ERROR,
 			       "NOT IMPLEMENTED:"
 			       " Current lchan would be compatible, we should send Channel Mode Modify");
-#if 0
-		case GSM48_MT_RR_CHAN_MODE_MODIF_ACK:
-			rc = gsm48_rx_rr_modif_ack(msg);
-			if (rc < 0)
-				bsc_assign_fail(conn, GSM0808_CAUSE_NO_RADIO_RESOURCE_AVAILABLE, NULL);
-			else
-				bsc_assign_compl(conn, 0);
-			break;
-#endif
 	}
 
 	conn->assignment.new_lchan = lchan_select_by_chan_mode(bts, req->chan_mode, req->full_rate);
