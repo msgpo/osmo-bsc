@@ -1722,28 +1722,6 @@ DEFUN(assignment_any, assignment_any_cmd,
 	return trigger_ho_or_as(vty, from_lchan, NULL);
 }
 
-#if 0
-
-DEFUN(handover_ext_cgi,
-      handover_ext_cgi_cmd,
-      "handover external (cgi|lac+ci|ci|lai|lac|all|none) [VAL1] [VAL2] [VAL3] [VAL4]",
-      MANUAL_HANDOVER_EXTERNAL_STR
-      "Identify handover target cell by Cell Global Identifier; supply MCC MNC LAC CI arguments\n"
-      "Identify handover target cell by Location Area Code and Cell Identify\n"
-      "Identify handover target cell by Cell Identify\n"
-      "Identify handover target cell by Location Area Identifcation\n"
-      "Identify handover target cell by Location Area Code\n"
-      "Identify handover target as all and any available cell\n"
-      "Do not associate a cell with the Handover Required message\n"
-      "Value to specify target cell, format depends\n"
-      "Value to specify target cell, format depends\n"
-      "Value to specify target cell, format depends\n"
-      "Value to specify target cell, format depends\n")
-{
-	return ho_or_as(vty, argv, argc);
-}
-#endif
-
 DEFUN(handover_any_to_arfcn_bsic, handover_any_to_arfcn_bsic_cmd,
       "handover any to " NEIGHBOR_IDENT_VTY_KEY_PARAMS,
       MANUAL_HANDOVER_STR
