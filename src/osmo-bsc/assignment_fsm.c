@@ -40,10 +40,13 @@
 
 static struct osmo_fsm assignment_fsm;
 
-/* From local var fi->priv, define local var conn. */
-#define GET_CONN() \
-	struct gsm_subscriber_connection *conn = fi->priv; \
-	OSMO_ASSERT((fi)->fsm == &assignment_fsm && (fi)->priv)
+struct gsm_subscriber_connection *assignment_fi_conn(struct osmo_fsm_inst *fi)
+{
+	OSMO_ASSERT(fi);
+	OSMO_ASSERT(fi->fsm == &assignment_fsm);
+	OSMO_ASSERT(fi->priv);
+	return fi->priv;
+}
 
 static const struct state_timeout assignment_fsm_timeouts[32] = {
 	[ASSIGNMENT_ST_WAIT_LCHAN_ACTIVE] = { .T=10 },
@@ -386,7 +389,7 @@ void assignment_fsm_start(struct gsm_subscriber_connection *conn, struct gsm_bts
 
 static void assignment_fsm_wait_lchan(struct osmo_fsm_inst *fi, uint32_t event, void *data)
 {
-	GET_CONN();
+	struct gsm_subscriber_connection *conn = assignment_fi_conn(fi);
 	switch (event) {
 
 	case ASSIGNMENT_EV_LCHAN_ACTIVE:
@@ -404,7 +407,7 @@ static void assignment_fsm_wait_lchan(struct osmo_fsm_inst *fi, uint32_t event, 
 static void assignment_fsm_wait_rr_ass_complete_onenter(struct osmo_fsm_inst *fi, uint32_t prev_state)
 {
 	int rc;
-	GET_CONN();
+	struct gsm_subscriber_connection *conn = assignment_fi_conn(fi);
 
 	rc = gsm48_send_rr_ass_cmd(conn->lchan, conn->assignment.new_lchan,
 				   conn->lchan->ms_power);
@@ -422,7 +425,7 @@ static uint8_t get_cause(void *data)
 
 static void assignment_fsm_wait_rr_ass_complete(struct osmo_fsm_inst *fi, uint32_t event, void *data)
 {
-	GET_CONN();
+	struct gsm_subscriber_connection *conn = assignment_fi_conn(fi);
 	switch (event) {
 
 	case ASSIGNMENT_EV_RR_ASSIGNMENT_COMPLETE:
@@ -441,14 +444,14 @@ static void assignment_fsm_wait_rr_ass_complete(struct osmo_fsm_inst *fi, uint32
 
 static void assignment_fsm_wait_lchan_established_onenter(struct osmo_fsm_inst *fi, uint32_t prev_state)
 {
-	GET_CONN();
+	struct gsm_subscriber_connection *conn = assignment_fi_conn(fi);
 	/* The RR Assignment Complete counts as RLL Establish event */
 	osmo_fsm_inst_dispatch(conn->assignment.new_lchan->fi, LCHAN_EV_RLL_ESTABLISH_IND, 0);
 }
 
 static void assignment_fsm_wait_lchan_established(struct osmo_fsm_inst *fi, uint32_t event, void *data)
 {
-	GET_CONN();
+	struct gsm_subscriber_connection *conn = assignment_fi_conn(fi);
 	switch (event) {
 
 	case ASSIGNMENT_EV_LCHAN_ESTABLISHED:
@@ -465,7 +468,7 @@ static void assignment_fsm_wait_lchan_established(struct osmo_fsm_inst *fi, uint
 
 static void assignment_fsm_wait_mgw_endpoint_to_msc_onenter(struct osmo_fsm_inst *fi, uint32_t prev_state)
 {
-	GET_CONN();
+	struct gsm_subscriber_connection *conn = assignment_fi_conn(fi);
 
 	OSMO_ASSERT(conn->assignment.requires_voice_stream);
 
@@ -492,7 +495,7 @@ static void assignment_fsm_wait_mgw_endpoint_to_msc_onenter(struct osmo_fsm_inst
 static void assignment_fsm_wait_mgw_endpoint_to_msc(struct osmo_fsm_inst *fi, uint32_t event, void *data)
 {
 	const struct mgcp_conn_peer *mgw_info;
-	GET_CONN();
+	struct gsm_subscriber_connection *conn = assignment_fi_conn(fi);
 	switch (event) {
 
 	case ASSIGNMENT_EV_MSC_MGW_OK:
@@ -579,7 +582,7 @@ static const struct value_string assignment_fsm_event_names[] = {
 
 void assignment_fsm_allstate_action(struct osmo_fsm_inst *fi, uint32_t event, void *data)
 {
-	GET_CONN();
+	struct gsm_subscriber_connection *conn = assignment_fi_conn(fi);
 	switch (event) {
 
 	case ASSIGNMENT_EV_CONN_RELEASING:
@@ -602,7 +605,7 @@ void assignment_fsm_allstate_action(struct osmo_fsm_inst *fi, uint32_t event, vo
 
 int assignment_fsm_timer_cb(struct osmo_fsm_inst *fi)
 {
-	GET_CONN();
+	struct gsm_subscriber_connection *conn = assignment_fi_conn(fi);
 	assignment_count_result(BSC_CTR_ASSIGNMENT_TIMEOUT);
 	assignment_fail(GSM0808_CAUSE_EQUIPMENT_FAILURE, "Timeout");
 	return 0;
@@ -610,7 +613,7 @@ int assignment_fsm_timer_cb(struct osmo_fsm_inst *fi)
 
 void assignment_fsm_cleanup(struct osmo_fsm_inst *fi, enum osmo_fsm_term_cause cause)
 {
-	GET_CONN();
+	struct gsm_subscriber_connection *conn = assignment_fi_conn(fi);
 	assignment_reset(conn);
 	conn->assignment.fi = NULL;
 }

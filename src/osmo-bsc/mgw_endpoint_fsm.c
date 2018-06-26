@@ -194,10 +194,13 @@ void mgw_endpoint_fsm_init(struct T_def *T_defs)
 	}
 }
 
-/* From local var fi->priv, define local var mgewp. */
-#define GET_MGWEP() \
-	struct mgw_endpoint *mgwep = fi->priv; \
-	OSMO_ASSERT((fi)->fsm == &mgwep_fsm && (fi)->priv)
+struct mgw_endpoint *mgwep_fi_mgwep(struct osmo_fsm_inst *fi)
+{
+	OSMO_ASSERT(fi);
+	OSMO_ASSERT(fi->fsm == &mgwep_fsm);
+	OSMO_ASSERT(fi->priv);
+	return fi->priv;
+}
 
 struct mgw_endpoint *mgw_endpoint_alloc(struct osmo_fsm_inst *parent, uint32_t parent_term_event,
 					struct mgcp_client *mgcp_client,
@@ -593,7 +596,7 @@ static void mgwep_fsm_check_state_chg_after_response(struct osmo_fsm_inst *fi)
 {
 	int waiting_for_response;
 	int occupied;
-	GET_MGWEP();
+	struct mgw_endpoint *mgwep = mgwep_fi_mgwep(fi);
 
 	mgwep_count(mgwep, &occupied, NULL, &waiting_for_response);
 	LOG_MGWEP(mgwep, LOGL_DEBUG, "CI in use: %d, waiting for response: %d", occupied, waiting_for_response);
@@ -617,7 +620,7 @@ static void mgwep_fsm_wait_mgw_response_onenter(struct osmo_fsm_inst *fi, uint32
 {
 	int count = 0;
 	int i;
-	GET_MGWEP();
+	struct mgw_endpoint *mgwep = mgwep_fi_mgwep(fi);
 
 	for (i = 0; i < ARRAY_SIZE(mgwep->ci); i++) {
 		count += send_verb(&mgwep->ci[i]);
@@ -631,7 +634,7 @@ static void mgwep_fsm_wait_mgw_response_onenter(struct osmo_fsm_inst *fi, uint32
 static void mgwep_fsm_handle_ci_events(struct osmo_fsm_inst *fi, uint32_t event, void *data)
 {
 	struct mgwep_ci *ci;
-	GET_MGWEP();
+	struct mgw_endpoint *mgwep = mgwep_fi_mgwep(fi);
 	ci = mgwep_ci_for_event(mgwep, event);
 	if (ci) {
 		if (event == CI_EV_SUCCESS(ci))
@@ -644,7 +647,7 @@ static void mgwep_fsm_handle_ci_events(struct osmo_fsm_inst *fi, uint32_t event,
 static void mgwep_fsm_in_use_onenter(struct osmo_fsm_inst *fi, uint32_t prev_state)
 {
 	int pending_not_sent;
-	GET_MGWEP();
+	struct mgw_endpoint *mgwep = mgwep_fi_mgwep(fi);
 
 	mgwep_count(mgwep, NULL, &pending_not_sent, NULL);
 	if (pending_not_sent)
@@ -684,7 +687,7 @@ static const struct osmo_fsm_state mgwep_fsm_states[] = {
 static int mgwep_fsm_timer_cb(struct osmo_fsm_inst *fi)
 {
 	int i;
-	GET_MGWEP();
+	struct mgw_endpoint *mgwep = mgwep_fi_mgwep(fi);
 
 	switch (fi->T) {
 	default:

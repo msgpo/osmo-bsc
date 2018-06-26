@@ -138,14 +138,13 @@ const char *handover_status(struct gsm_subscriber_connection *conn)
 
 static struct osmo_fsm ho_fsm;
 
-/* From local var fi->priv, define local var conn. */
-#define GET_CONN() \
-	struct gsm_subscriber_connection *conn = fi->priv; \
-	OSMO_ASSERT((fi)->fsm == &ho_fsm && (fi)->priv) \
-
-#define GET_HO() \
-	GET_CONN(); \
-	struct handover *ho = &conn->ho
+struct gsm_subscriber_connection *ho_fi_conn(struct osmo_fsm_inst *fi)
+{
+	OSMO_ASSERT(fi);
+	OSMO_ASSERT(fi->fsm == &ho_fsm);
+	OSMO_ASSERT(fi->priv);
+	return fi->priv;
+}
 
 static const struct state_timeout ho_fsm_timeouts[32] = {
 	[HO_ST_WAIT_LCHAN_ACTIVE] = { .T = 23042 },
@@ -219,7 +218,7 @@ insane:
 
 static void ho_fsm_update_id(struct osmo_fsm_inst *fi, const char *label)
 {
-	GET_CONN();
+	struct gsm_subscriber_connection *conn = ho_fi_conn(fi);
 	if (conn->fi->id)
 		osmo_fsm_inst_update_id_f(fi, "%s_%s", label, conn->fi->id);
 	else
@@ -714,7 +713,7 @@ void handover_end(struct gsm_subscriber_connection *conn, enum handover_result r
 
 static void ho_fsm_wait_lchan_active(struct osmo_fsm_inst *fi, uint32_t event, void *data)
 {
-	GET_CONN();
+	struct gsm_subscriber_connection *conn = ho_fi_conn(fi);
 	switch (event) {
 
 	case HO_EV_LCHAN_ACTIVE:
@@ -734,7 +733,7 @@ static void ho_fsm_wait_lchan_active(struct osmo_fsm_inst *fi, uint32_t event, v
 static void ho_fsm_wait_rr_ho_detect_onenter(struct osmo_fsm_inst *fi, uint32_t prev_state)
 {
 	int rc;
-	GET_CONN();
+	struct gsm_subscriber_connection *conn = ho_fi_conn(fi);
 	struct handover *ho = &conn->ho;
 
 	struct msgb *rr_ho_cmd = gsm48_make_ho_cmd(ho->mt.new_lchan,
@@ -769,7 +768,8 @@ static void ho_fsm_wait_rr_ho_detect_onenter(struct osmo_fsm_inst *fi, uint32_t 
 
 static void ho_fsm_wait_rr_ho_detect(struct osmo_fsm_inst *fi, uint32_t event, void *data)
 {
-	GET_HO();
+	struct gsm_subscriber_connection *conn = ho_fi_conn(fi);
+	struct handover *ho = &conn->ho;
 	switch (event) {
 
 	case HO_EV_RR_HO_DETECT:
@@ -814,7 +814,7 @@ static void ho_fsm_wait_rr_ho_detect(struct osmo_fsm_inst *fi, uint32_t event, v
 
 static void ho_fsm_wait_rr_ho_complete(struct osmo_fsm_inst *fi, uint32_t event, void *data)
 {
-	GET_CONN();
+	struct gsm_subscriber_connection *conn = ho_fi_conn(fi);
 
 	switch (event) {
 
@@ -835,7 +835,8 @@ static void ho_fsm_post_lchan_established(struct osmo_fsm_inst *fi);
 
 static void ho_fsm_wait_lchan_established_onenter(struct osmo_fsm_inst *fi, uint32_t prev_state)
 {
-	GET_HO();
+	struct gsm_subscriber_connection *conn = ho_fi_conn(fi);
+	struct handover *ho = &conn->ho;
 
 	/* The RR Assignment Complete counts as RLL Establish event */
 	osmo_fsm_inst_dispatch(ho->mt.new_lchan->fi, LCHAN_EV_RLL_ESTABLISH_IND, 0);
@@ -860,7 +861,8 @@ static void ho_fsm_wait_lchan_established(struct osmo_fsm_inst *fi, uint32_t eve
 
 static void ho_fsm_post_lchan_established(struct osmo_fsm_inst *fi)
 {
-	GET_HO();
+	struct gsm_subscriber_connection *conn = ho_fi_conn(fi);
+	struct handover *ho = &conn->ho;
 
 	if (ho->mt.new_lchan->activate.requires_voice_stream
 	    && (ho->scope & HO_INTER_BSC_MT))
@@ -871,7 +873,8 @@ static void ho_fsm_post_lchan_established(struct osmo_fsm_inst *fi)
 
 static void ho_fsm_wait_mgw_endpoint_to_msc_onenter(struct osmo_fsm_inst *fi, uint32_t prev_state)
 {
-	GET_HO();
+	struct gsm_subscriber_connection *conn = ho_fi_conn(fi);
+	struct handover *ho = &conn->ho;
 
 	if (!gscon_connect_mgw_to_msc(conn,
 				      ho->mt.new_lchan,
@@ -889,7 +892,7 @@ static void ho_fsm_wait_mgw_endpoint_to_msc_onenter(struct osmo_fsm_inst *fi, ui
 
 static void ho_fsm_wait_mgw_endpoint_to_msc(struct osmo_fsm_inst *fi, uint32_t event, void *data)
 {
-	GET_CONN();
+	struct gsm_subscriber_connection *conn = ho_fi_conn(fi);
 	switch (event) {
 
 	case HO_EV_MSC_MGW_OK:
@@ -932,7 +935,7 @@ static void moho_fsm_wait_ho_command(struct osmo_fsm_inst *fi, uint32_t event, v
 {
 	int rc;
 	struct moho_rx_bssmap_ho_command *rx;
-	GET_CONN();
+	struct gsm_subscriber_connection *conn = ho_fi_conn(fi);
 	switch (event) {
 
 	case MOHO_EV_BSSMAP_HO_COMMAND:
@@ -1062,7 +1065,7 @@ static const struct value_string ho_fsm_event_names[] = {
 
 void ho_fsm_allstate_action(struct osmo_fsm_inst *fi, uint32_t event, void *data)
 {
-	GET_CONN();
+	struct gsm_subscriber_connection *conn = ho_fi_conn(fi);
 	switch (event) {
 
 	case HO_EV_CONN_RELEASING:
@@ -1097,14 +1100,14 @@ void ho_fsm_allstate_action(struct osmo_fsm_inst *fi, uint32_t event, void *data
 
 int ho_fsm_timer_cb(struct osmo_fsm_inst *fi)
 {
-	GET_CONN();
+	struct gsm_subscriber_connection *conn = ho_fi_conn(fi);
 	ho_fail(HO_RESULT_FAIL_TIMEOUT, "Timeout");
 	return 0;
 }
 
 void ho_fsm_cleanup(struct osmo_fsm_inst *fi, enum osmo_fsm_term_cause cause)
 {
-	GET_CONN();
+	struct gsm_subscriber_connection *conn = ho_fi_conn(fi);
 	conn->ho.fi = NULL;
 }
 

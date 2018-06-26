@@ -38,11 +38,13 @@
 
 static struct osmo_fsm lchan_fsm;
 
-#define GET_LCHAN() \
-	struct gsm_lchan *lchan = fi->priv; \
-	OSMO_ASSERT((fi)->fsm == &lchan_fsm); \
-	OSMO_ASSERT((fi)->priv); \
-	OSMO_ASSERT(lchan->fi == (fi))
+struct gsm_lchan *lchan_fi_lchan(struct osmo_fsm_inst *fi)
+{
+	OSMO_ASSERT(fi);
+	OSMO_ASSERT(fi->fsm == &lchan_fsm);
+	OSMO_ASSERT(fi->priv);
+	return fi->priv;
+}
 
 bool lchan_may_receive_data(struct gsm_lchan *lchan)
 {
@@ -372,7 +374,7 @@ static void lchan_reset(struct gsm_lchan *lchan)
 
 static void lchan_fsm_unused_onenter(struct osmo_fsm_inst *fi, uint32_t prev_state)
 {
-	GET_LCHAN();
+	struct gsm_lchan *lchan = lchan_fi_lchan(fi);
 	lchan_reset(lchan);
 	osmo_fsm_inst_dispatch(lchan->ts->fi, TS_EV_LCHAN_UNUSED, lchan);
 }
@@ -380,7 +382,7 @@ static void lchan_fsm_unused_onenter(struct osmo_fsm_inst *fi, uint32_t prev_sta
 static void lchan_fsm_unused(struct osmo_fsm_inst *fi, uint32_t event, void *data)
 {
 	struct lchan_activate_info *info = data;
-	GET_LCHAN();
+	struct gsm_lchan *lchan = lchan_fi_lchan(fi);
 	switch (event) {
 
 	case LCHAN_EV_ACTIVATE:
@@ -444,7 +446,7 @@ static void lchan_fsm_wait_ts_ready_onenter(struct osmo_fsm_inst *fi, uint32_t p
 {
 	struct mgw_endpoint *mgwep;
 	struct mgcp_conn_peer crcx_info = {};
-	GET_LCHAN();
+	struct gsm_lchan *lchan = lchan_fi_lchan(fi);
 
 	if (lchan->release_requested) {
 		lchan_fail("Release requested while activating");
@@ -497,7 +499,7 @@ static void lchan_fsm_wait_ts_ready_onenter(struct osmo_fsm_inst *fi, uint32_t p
 
 static void lchan_fsm_wait_ts_ready(struct osmo_fsm_inst *fi, uint32_t event, void *data)
 {
-	GET_LCHAN();
+	struct gsm_lchan *lchan = lchan_fi_lchan(fi);
 	switch (event) {
 
 	case LCHAN_EV_TS_READY:
@@ -520,7 +522,7 @@ static void lchan_fsm_wait_activ_ack_onenter(struct osmo_fsm_inst *fi, uint32_t 
 	int rc;
 	uint8_t act_type;
 	uint8_t ho_ref = 0;
-	GET_LCHAN();
+	struct gsm_lchan *lchan = lchan_fi_lchan(fi);
 
 	if (lchan->release_requested) {
 		lchan_fail_to(LCHAN_ST_UNUSED, "Release requested while activating");
@@ -548,7 +550,7 @@ static void lchan_fsm_wait_activ_ack_onenter(struct osmo_fsm_inst *fi, uint32_t 
 
 static void lchan_fsm_wait_activ_ack(struct osmo_fsm_inst *fi, uint32_t event, void *data)
 {
-	GET_LCHAN();
+	struct gsm_lchan *lchan = lchan_fi_lchan(fi);
 	switch (event) {
 
 	case LCHAN_EV_MGW_ENDPOINT_AVAILABLE:
@@ -589,7 +591,7 @@ static void lchan_fsm_wait_activ_ack(struct osmo_fsm_inst *fi, uint32_t event, v
 static void lchan_fsm_wait_rll_establish_onenter(struct osmo_fsm_inst *fi, uint32_t prev_state)
 {
 	int rc;
-	GET_LCHAN();
+	struct gsm_lchan *lchan = lchan_fi_lchan(fi);
 	if (lchan->release_requested) {
 		lchan_fail_to(LCHAN_ST_WAIT_RF_RELEASE_ACK, "Release requested while activating");
 		return;
@@ -656,7 +658,7 @@ static void lchan_fsm_wait_rll_establish_onenter(struct osmo_fsm_inst *fi, uint3
 
 static void lchan_fsm_wait_rll_establish(struct osmo_fsm_inst *fi, uint32_t event, void *data)
 {
-	GET_LCHAN();
+	struct gsm_lchan *lchan = lchan_fi_lchan(fi);
 	switch (event) {
 
 	case LCHAN_EV_MGW_ENDPOINT_AVAILABLE:
@@ -683,7 +685,7 @@ static void lchan_fsm_tch_post_endpoint_available(struct osmo_fsm_inst *fi);
 
 static void lchan_fsm_wait_mgw_endpoint_available_onenter(struct osmo_fsm_inst *fi, uint32_t prev_state)
 {
-	GET_LCHAN();
+	struct gsm_lchan *lchan = lchan_fi_lchan(fi);
 
 	if (lchan->release_requested) {
 		lchan_fail("Release requested while activating");
@@ -698,7 +700,7 @@ static void lchan_fsm_wait_mgw_endpoint_available_onenter(struct osmo_fsm_inst *
 
 static void lchan_fsm_wait_mgw_endpoint_available(struct osmo_fsm_inst *fi, uint32_t event, void *data)
 {
-	GET_LCHAN();
+	struct gsm_lchan *lchan = lchan_fi_lchan(fi);
 	switch (event) {
 
 	case LCHAN_EV_MGW_ENDPOINT_AVAILABLE:
@@ -713,7 +715,7 @@ static void lchan_fsm_wait_mgw_endpoint_available(struct osmo_fsm_inst *fi, uint
 
 static void lchan_fsm_tch_post_endpoint_available(struct osmo_fsm_inst *fi)
 {
-	GET_LCHAN();
+	struct gsm_lchan *lchan = lchan_fi_lchan(fi);
 
 	LOG_LCHAN(lchan, LOGL_DEBUG, "MGW endpoint: %s",
 		  mgcp_conn_peer_name(mgwep_ci_get_rtp_info(lchan->mgw_endpoint_ci_bts)));
@@ -728,7 +730,7 @@ static void lchan_fsm_wait_ipacc_crcx_ack_onenter(struct osmo_fsm_inst *fi, uint
 {
 	int rc;
 	int val;
-	GET_LCHAN();
+	struct gsm_lchan *lchan = lchan_fi_lchan(fi);
 
 	if (lchan->release_requested) {
 		lchan_fail("Release requested while activating");
@@ -785,7 +787,7 @@ static void lchan_fsm_wait_ipacc_crcx_ack(struct osmo_fsm_inst *fi, uint32_t eve
 static void lchan_fsm_wait_ipacc_mdcx_ack_onenter(struct osmo_fsm_inst *fi, uint32_t prev_state)
 {
 	int rc;
-	GET_LCHAN();
+	struct gsm_lchan *lchan = lchan_fi_lchan(fi);
 
 	uint32_t ip = lchan->abis_ip.bound_ip;
 	int port = lchan->abis_ip.bound_port;
@@ -846,7 +848,7 @@ static void lchan_fsm_wait_mgw_endpoint_configured_onenter(struct osmo_fsm_inst 
 	struct mgcp_conn_peer mdcx_info;
 	struct in_addr addr;
 	const char *addr_str;
-	GET_LCHAN();
+	struct gsm_lchan *lchan = lchan_fi_lchan(fi);
 
 	if (lchan->release_requested) {
 		lchan_fail("Release requested while activating");
@@ -900,7 +902,7 @@ static void lchan_fsm_wait_mgw_endpoint_configured(struct osmo_fsm_inst *fi, uin
 
 static void lchan_fsm_established_onenter(struct osmo_fsm_inst *fi, uint32_t prev_state)
 {
-	GET_LCHAN();
+	struct gsm_lchan *lchan = lchan_fi_lchan(fi);
 
 	if (lchan->release_requested) {
 		lchan_fail("Release requested while activating");
@@ -950,7 +952,7 @@ static void handle_rll_rel_ind_or_conf(struct osmo_fsm_inst *fi, uint32_t event,
 {
 	uint8_t link_id;
 	uint8_t sapi;
-	GET_LCHAN();
+	struct gsm_lchan *lchan = lchan_fi_lchan(fi);
 
 	OSMO_ASSERT(data);
 	link_id	= *(uint8_t*)data;
@@ -1001,7 +1003,7 @@ static void lchan_fsm_wait_sapis_released_onenter(struct osmo_fsm_inst *fi, uint
 {
 	int sapis;
 	int sapi;
-	GET_LCHAN();
+	struct gsm_lchan *lchan = lchan_fi_lchan(fi);
 
 	for (sapi=0; sapi < ARRAY_SIZE(lchan->sapis); sapi++)
 		if (lchan->sapis[sapi])
@@ -1050,7 +1052,7 @@ static void lchan_fsm_wait_sapis_released(struct osmo_fsm_inst *fi, uint32_t eve
 static void lchan_fsm_wait_rf_release_ack_onenter(struct osmo_fsm_inst *fi, uint32_t prev_state)
 {
 	int rc;
-	GET_LCHAN();
+	struct gsm_lchan *lchan = lchan_fi_lchan(fi);
 	rc = rsl_tx_rf_chan_release(lchan);
 	if (rc)
 		LOG_LCHAN(lchan, LOGL_ERROR, "Failed to Tx RSL RF Channel Release: rc=%d %s\n",
@@ -1059,7 +1061,7 @@ static void lchan_fsm_wait_rf_release_ack_onenter(struct osmo_fsm_inst *fi, uint
 
 static void lchan_fsm_wait_rf_release_ack(struct osmo_fsm_inst *fi, uint32_t event, void *data)
 {
-	GET_LCHAN();
+	struct gsm_lchan *lchan = lchan_fi_lchan(fi);
 	switch (event) {
 
 	case LCHAN_EV_RSL_RF_CHAN_REL_ACK:
@@ -1076,13 +1078,13 @@ static void lchan_fsm_wait_rf_release_ack(struct osmo_fsm_inst *fi, uint32_t eve
 
 static void lchan_fsm_borken_onenter(struct osmo_fsm_inst *fi, uint32_t prev_state)
 {
-	GET_LCHAN();
+	struct gsm_lchan *lchan = lchan_fi_lchan(fi);
 	lchan_reset(lchan);
 }
 
 static void lchan_fsm_borken(struct osmo_fsm_inst *fi, uint32_t event, void *data)
 {
-	GET_LCHAN();
+	struct gsm_lchan *lchan = lchan_fi_lchan(fi);
 	switch (event) {
 
 	case LCHAN_EV_RSL_CHAN_ACTIV_ACK:
@@ -1330,7 +1332,7 @@ static const struct value_string lchan_fsm_event_names[] = {
 
 void lchan_fsm_allstate_action(struct osmo_fsm_inst *fi, uint32_t event, void *data)
 {
-	GET_LCHAN();
+	struct gsm_lchan *lchan = lchan_fi_lchan(fi);
 
 	switch (event) {
 
@@ -1358,7 +1360,7 @@ void lchan_fsm_allstate_action(struct osmo_fsm_inst *fi, uint32_t event, void *d
 
 int lchan_fsm_timer_cb(struct osmo_fsm_inst *fi)
 {
-	GET_LCHAN();
+	struct gsm_lchan *lchan = lchan_fi_lchan(fi);
 	switch (fi->state) {
 
 	case LCHAN_ST_WAIT_BEFORE_RF_RELEASE:
@@ -1423,7 +1425,7 @@ void lchan_release(struct gsm_lchan *lchan, bool sacch_deact,
 
 void lchan_fsm_cleanup(struct osmo_fsm_inst *fi, enum osmo_fsm_term_cause cause)
 {
-	GET_LCHAN();
+	struct gsm_lchan *lchan = lchan_fi_lchan(fi);
 	if (lchan->conn)
 		gscon_forget_lchan(lchan->conn, lchan);
 	lchan_reset(lchan);

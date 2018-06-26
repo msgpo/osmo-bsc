@@ -37,13 +37,13 @@ enum ts_fsm_T {
 	T_CHAN_ACT_DEACT=23001,
 };
 
-#define GET_TS(fi, TS) \
-	struct gsm_bts_trx_ts *TS = fi->priv; \
-	OSMO_ASSERT((fi)->fsm == &ts_fsm && (fi)->priv)
-
-#define GET_BTS_TS(fi, BTS, TS) \
-	GET_TS(fi, TS); \
-	struct gsm_bts *BTS = TS->trx->bts
+struct gsm_bts_trx_ts *ts_fi_ts(struct osmo_fsm_inst *fi)
+{
+	OSMO_ASSERT(fi);
+	OSMO_ASSERT(fi->fsm == &ts_fsm);
+	OSMO_ASSERT(fi->priv);
+	return fi->priv;
+}
 
 static void ts_fsm_update_id(struct gsm_bts_trx_ts *ts)
 {
@@ -152,7 +152,7 @@ static int ts_lchans_waiting(struct gsm_bts_trx_ts *ts)
 
 static void ts_fsm_error(struct osmo_fsm_inst *fi, uint32_t state_chg, const char *fmt, ...)
 {
-	GET_TS(fi, ts);
+	struct gsm_bts_trx_ts *ts = ts_fi_ts(fi);
 
 	char *errmsg = NULL;
 
@@ -220,7 +220,8 @@ static void ts_setup_lchans(struct gsm_bts_trx_ts *ts)
 
 static void ts_fsm_not_initialized(struct osmo_fsm_inst *fi, uint32_t event, void *data)
 {
-	GET_BTS_TS(fi, bts, ts);
+	struct gsm_bts_trx_ts *ts = ts_fi_ts(fi);
+	struct gsm_bts *bts = ts->trx->bts;
 	switch (event) {
 
 	case TS_EV_OML_READY:
@@ -265,7 +266,8 @@ static void ts_fsm_not_initialized(struct osmo_fsm_inst *fi, uint32_t event, voi
 
 static void ts_fsm_unused_onenter(struct osmo_fsm_inst *fi, uint32_t prev_state)
 {
-	GET_BTS_TS(fi, bts, ts);
+	struct gsm_bts_trx_ts *ts = ts_fi_ts(fi);
+	struct gsm_bts *bts = ts->trx->bts;
 
 	/* We are entering the unused state. There must by definition not be any lchans waiting to be
 	 * activated. */
@@ -302,7 +304,7 @@ static void ts_fsm_unused_onenter(struct osmo_fsm_inst *fi, uint32_t prev_state)
 
 static void ts_fsm_unused(struct osmo_fsm_inst *fi, uint32_t event, void *data)
 {
-	GET_TS(fi, ts);
+	struct gsm_bts_trx_ts *ts = ts_fi_ts(fi);
 
 	switch (event) {
 
@@ -340,7 +342,7 @@ static inline void ts_fsm_pdch_deact(struct osmo_fsm_inst *fi)
 static void ts_fsm_wait_pdch_act_onenter(struct osmo_fsm_inst *fi, uint32_t prev_state)
 {
 	int rc;
-	GET_TS(fi, ts);
+	struct gsm_bts_trx_ts *ts = ts_fi_ts(fi);
 
 	rc = rsl_tx_dyn_ts_pdch_act_deact(ts, true);
 
@@ -351,7 +353,7 @@ static void ts_fsm_wait_pdch_act_onenter(struct osmo_fsm_inst *fi, uint32_t prev
 
 static void ts_fsm_wait_pdch_act(struct osmo_fsm_inst *fi, uint32_t event, void *data)
 {
-	GET_TS(fi, ts);
+	struct gsm_bts_trx_ts *ts = ts_fi_ts(fi);
 	switch (event) {
 
 	case TS_EV_PDCH_ACT_ACK:
@@ -398,7 +400,7 @@ static void ts_fsm_wait_pdch_act(struct osmo_fsm_inst *fi, uint32_t event, void 
 static void ts_fsm_pdch_onenter(struct osmo_fsm_inst *fi, uint32_t prev_state)
 {
 	int count;
-	GET_TS(fi, ts);
+	struct gsm_bts_trx_ts *ts = ts_fi_ts(fi);
 
 	/* Set pchan = PDCH status, but double check. */
 	switch (ts->pchan_on_init) {
@@ -425,7 +427,7 @@ static void ts_fsm_pdch_onenter(struct osmo_fsm_inst *fi, uint32_t prev_state)
 
 static void ts_fsm_pdch(struct osmo_fsm_inst *fi, uint32_t event, void *data)
 {
-	GET_TS(fi, ts);
+	struct gsm_bts_trx_ts *ts = ts_fi_ts(fi);
 	switch (event) {
 
 	case TS_EV_LCHAN_REQUESTED:
@@ -459,7 +461,7 @@ static void ts_fsm_pdch(struct osmo_fsm_inst *fi, uint32_t event, void *data)
 static void ts_fsm_wait_pdch_deact_onenter(struct osmo_fsm_inst *fi, uint32_t prev_state)
 {
 	int rc;
-	GET_TS(fi, ts);
+	struct gsm_bts_trx_ts *ts = ts_fi_ts(fi);
 
 	rc = rsl_tx_dyn_ts_pdch_act_deact(ts, false);
 
@@ -470,7 +472,7 @@ static void ts_fsm_wait_pdch_deact_onenter(struct osmo_fsm_inst *fi, uint32_t pr
 
 static void ts_fsm_wait_pdch_deact(struct osmo_fsm_inst *fi, uint32_t event, void *data)
 {
-	GET_TS(fi, ts);
+	struct gsm_bts_trx_ts *ts = ts_fi_ts(fi);
 	switch (event) {
 
 	case TS_EV_PDCH_DEACT_ACK:
@@ -530,7 +532,7 @@ static void ts_fsm_in_use_onenter(struct osmo_fsm_inst *fi, uint32_t prev_event)
 {
 	int in_use;
 	struct gsm_lchan *lchan;
-	GET_TS(fi, ts);
+	struct gsm_bts_trx_ts *ts = ts_fi_ts(fi);
 
 	/* After being in use, allow PDCH act again, if appropriate. */
 	ts->pdch_act_allowed = true;
@@ -551,7 +553,7 @@ static void ts_fsm_in_use_onenter(struct osmo_fsm_inst *fi, uint32_t prev_event)
 
 static void ts_fsm_in_use(struct osmo_fsm_inst *fi, uint32_t event, void *data)
 {
-	GET_TS(fi, ts);
+	struct gsm_bts_trx_ts *ts = ts_fi_ts(fi);
 	switch (event) {
 	case TS_EV_LCHAN_UNUSED:
 		if (!ts_count_active_lchans(ts))
@@ -623,7 +625,7 @@ static int ts_fsm_timer_cb(struct osmo_fsm_inst *fi)
 
 static void ts_fsm_allstate(struct osmo_fsm_inst *fi, uint32_t event, void *data)
 {
-	GET_TS(fi, ts);
+	struct gsm_bts_trx_ts *ts = ts_fi_ts(fi);
 	switch (event) {
 	case TS_EV_OML_DOWN:
 		if (fi->state != TS_ST_NOT_INITIALIZED)
