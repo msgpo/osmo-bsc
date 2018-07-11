@@ -710,7 +710,7 @@ static const struct osmo_fsm_state ts_fsm_states[] = {
 			,
 	},
 	[TS_ST_WAIT_PDCH_DEACT] = {
-		.name = "WAIT_PDCH_ACT",
+		.name = "WAIT_PDCH_DEACT",
 		.onenter = ts_fsm_wait_pdch_deact_onenter,
 		.action = ts_fsm_wait_pdch_deact,
 		.in_event_mask = 0
