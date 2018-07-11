@@ -393,7 +393,11 @@ static void assignment_fsm_wait_lchan(struct osmo_fsm_inst *fi, uint32_t event, 
 		if (data != conn->assignment.new_lchan)
 			return;
 
+		/* The TS may have changed its pchan_is */
+		assignment_fsm_update_id(conn);
+
 		assignment_fsm_state_chg(ASSIGNMENT_ST_WAIT_RR_ASS_COMPLETE);
+
 		return;
 
 	default:
