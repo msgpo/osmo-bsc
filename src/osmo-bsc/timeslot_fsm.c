@@ -530,25 +530,78 @@ static void ts_fsm_wait_pdch_deact(struct osmo_fsm_inst *fi, uint32_t event, voi
 
 static void ts_fsm_in_use_onenter(struct osmo_fsm_inst *fi, uint32_t prev_event)
 {
-	int in_use;
+	bool ok;
 	struct gsm_lchan *lchan;
 	struct gsm_bts_trx_ts *ts = ts_fi_ts(fi);
+	enum gsm_chan_t activating_type = GSM_LCHAN_NONE;
 
 	/* After being in use, allow PDCH act again, if appropriate. */
 	ts->pdch_act_allowed = true;
 
-	ts_lchans_dispatch(ts, LCHAN_ST_WAIT_TS_READY, LCHAN_EV_TS_READY);
-
-	in_use = 0;
-	ts_for_each_lchan(lchan, ts) {
+	/* For static TS, check validity. For dyn TS, figure out which PCHAN this should become. */
+	ts_as_pchan_for_each_lchan(lchan, ts, ts->pchan_on_init) {
 		if (lchan_state_is(lchan, LCHAN_ST_UNUSED))
 			continue;
-		in_use ++;
+
+		switch (lchan->type) {
+		case GSM_LCHAN_TCH_H:
+		case GSM_LCHAN_TCH_F:
+		case GSM_LCHAN_SDCCH:
+			ok = ts_is_capable_of_lchant(ts, lchan->type);
+			break;
+		default:
+			ok = false;
+			break;
+		}
+
+		if (!ok && lchan_state_is(lchan, LCHAN_ST_WAIT_TS_READY)) {
+			LOG_TS(ts, LOGL_ERROR, "lchan activation of %s is not permitted for %s (%s)\n",
+			       gsm_lchant_name(lchan->type), gsm_pchan_name(ts->pchan_on_init),
+			       gsm_lchan_name(lchan));
+			lchan_dispatch(lchan, LCHAN_EV_TS_ERROR);
+		}
+
+		if (!ok)
+			continue;
+
+		if (activating_type == GSM_LCHAN_NONE)
+			activating_type = lchan->type;
+		else if (activating_type != lchan->type) {
+			LOG_TS(ts, LOGL_ERROR, "lchan type %s mismatches %s (%s)\n",
+			       gsm_lchant_name(lchan->type), gsm_lchant_name(activating_type),
+			       gsm_lchan_name(lchan));
+			lchan_dispatch(lchan, LCHAN_EV_TS_ERROR);
+		}
 	}
-	if (!in_use) {
+
+	ok = false;
+	switch (activating_type) {
+	case GSM_LCHAN_SDCCH:
+	case GSM_LCHAN_TCH_F:
+	case GSM_LCHAN_TCH_H:
+		ok = ts_is_capable_of_lchant(ts, activating_type);
+		break;
+
+	case GSM_LCHAN_NONE:
 		LOG_TS(ts, LOGL_DEBUG, "Entered IN_USE state but no lchans are actually in use now.");
-		osmo_fsm_inst_state_chg(fi, TS_ST_UNUSED, 0, 0);
+		break;
+
+	default:
+		LOG_TS(ts, LOGL_ERROR, "cannot use timeslot as %s\n", gsm_lchant_name(activating_type));
+		ts_lchans_dispatch(ts, LCHAN_ST_WAIT_TS_READY, LCHAN_EV_TS_ERROR);
+		break;
 	}
+
+	if (!ok) {
+		osmo_fsm_inst_state_chg(fi, TS_ST_UNUSED, 0, 0);
+		return;
+	}
+
+	/* Make sure dyn TS pchan_is is updated. For TCH/F_PDCH, there are only PDCH or TCH/F modes, but
+	 * for Osmocom style TCH/F_TCH/H_PDCH the pchan_is == NONE until an lchan is activated. */
+	if (ts->pchan_on_init == GSM_PCHAN_TCH_F_TCH_H_PDCH)
+		ts->pchan_is = gsm_pchan_by_lchan_type(activating_type);
+	ts_lchans_dispatch(ts, LCHAN_ST_WAIT_TS_READY, LCHAN_EV_TS_READY);
 }
 
 static void ts_fsm_in_use(struct osmo_fsm_inst *fi, uint32_t event, void *data)

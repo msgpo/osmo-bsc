@@ -1440,6 +1440,79 @@ bool ts_is_capable_of_pchan(struct gsm_bts_trx_ts *ts, enum gsm_phys_chan_config
 	}
 }
 
+bool ts_is_capable_of_lchant(struct gsm_bts_trx_ts *ts, enum gsm_chan_t type)
+{
+	switch (ts->pchan_on_init) {
+
+	case GSM_PCHAN_TCH_F:
+		switch (type) {
+		case GSM_LCHAN_TCH_F:
+			return true;
+		default:
+			return false;
+		}
+
+	case GSM_PCHAN_TCH_H:
+		switch (type) {
+		case GSM_LCHAN_TCH_H:
+			return true;
+		default:
+			return false;
+		}
+
+	case GSM_PCHAN_TCH_F_PDCH:
+		switch (type) {
+		case GSM_LCHAN_TCH_F:
+		case GSM_LCHAN_PDTCH:
+			return true;
+		default:
+			return false;
+		}
+
+	case GSM_PCHAN_TCH_F_TCH_H_PDCH:
+		switch (type) {
+		case GSM_LCHAN_TCH_F:
+		case GSM_LCHAN_TCH_H:
+		case GSM_LCHAN_PDTCH:
+			return true;
+		default:
+			return false;
+		}
+
+	case GSM_PCHAN_PDCH:
+		switch (type) {
+		case GSM_LCHAN_PDTCH:
+			return true;
+		default:
+			return false;
+		}
+
+	case GSM_PCHAN_CCCH:
+		switch (type) {
+		case GSM_LCHAN_CCCH:
+			return true;
+		default:
+			return false;
+		}
+		break;
+
+	case GSM_PCHAN_CCCH_SDCCH4_CBCH:
+	case GSM_PCHAN_CCCH_SDCCH4:
+	case GSM_PCHAN_SDCCH8_SACCH8C:
+	case GSM_PCHAN_SDCCH8_SACCH8C_CBCH:
+		switch (type) {
+		case GSM_LCHAN_CCCH:
+		case GSM_LCHAN_SDCCH:
+			return true;
+		default:
+			return false;
+		}
+
+	default:
+		return false;
+	}
+}
+
 static int trx_count_free_ts(struct gsm_bts_trx *trx, enum gsm_phys_chan_config pchan)
 {
 	struct gsm_bts_trx_ts *ts;
