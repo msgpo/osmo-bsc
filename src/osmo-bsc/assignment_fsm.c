@@ -433,6 +433,11 @@ static void assignment_fsm_wait_rr_ass_complete(struct osmo_fsm_inst *fi, uint32
 		assignment_fsm_state_chg(ASSIGNMENT_ST_WAIT_LCHAN_ESTABLISHED);
 		return;
 
+	case ASSIGNMENT_EV_LCHAN_ESTABLISHED:
+		/* The lchan is already done with all of its RTP setup. We will notice the lchan state to
+		 * be established in assignment_fsm_wait_lchan_established_onenter(). */
+		return;
+
 	case ASSIGNMENT_EV_RR_ASSIGNMENT_FAIL:
 		assignment_count_result(BSC_CTR_ASSIGNMENT_FAILED);
 		assignment_fail(get_cause(data), "Rx RR Assignment Failure");
@@ -443,28 +448,36 @@ static void assignment_fsm_wait_rr_ass_complete(struct osmo_fsm_inst *fi, uint32
 	}
 }
 
+static void assignment_fsm_post_lchan_established(struct osmo_fsm_inst *fi);
+
 static void assignment_fsm_wait_lchan_established_onenter(struct osmo_fsm_inst *fi, uint32_t prev_state)
 {
 	struct gsm_subscriber_connection *conn = assignment_fi_conn(fi);
-	/* The RR Assignment Complete counts as RLL Establish event */
-	osmo_fsm_inst_dispatch(conn->assignment.new_lchan->fi, LCHAN_EV_RLL_ESTABLISH_IND, 0);
+	/* Do we still need to wait for the RTP stream at all? */
+	if (lchan_state_is(conn->assignment.new_lchan, LCHAN_ST_ESTABLISHED))
+		assignment_fsm_post_lchan_established(fi);
 }
 
 static void assignment_fsm_wait_lchan_established(struct osmo_fsm_inst *fi, uint32_t event, void *data)
 {
-	struct gsm_subscriber_connection *conn = assignment_fi_conn(fi);
 	switch (event) {
 
 	case ASSIGNMENT_EV_LCHAN_ESTABLISHED:
-		if (conn->assignment.requires_voice_stream)
-			assignment_fsm_state_chg(ASSIGNMENT_ST_WAIT_MGW_ENDPOINT_TO_MSC);
-		else
-			assignment_success(conn);
+		assignment_fsm_post_lchan_established(fi);
 		return;
 
 	default:
 		OSMO_ASSERT(false);
 	}
+}
+
+static void assignment_fsm_post_lchan_established(struct osmo_fsm_inst *fi)
+{
+	struct gsm_subscriber_connection *conn = assignment_fi_conn(fi);
+	if (conn->assignment.requires_voice_stream)
+		assignment_fsm_state_chg(ASSIGNMENT_ST_WAIT_MGW_ENDPOINT_TO_MSC);
+	else
+		assignment_success(conn);
 }
 
 static void assignment_fsm_wait_mgw_endpoint_to_msc_onenter(struct osmo_fsm_inst *fi, uint32_t prev_state)
