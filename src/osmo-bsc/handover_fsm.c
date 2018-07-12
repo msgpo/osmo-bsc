@@ -880,10 +880,6 @@ static void ho_fsm_post_lchan_established(struct osmo_fsm_inst *fi);
 static void ho_fsm_wait_lchan_established_onenter(struct osmo_fsm_inst *fi, uint32_t prev_state)
 {
 	struct gsm_subscriber_connection *conn = ho_fi_conn(fi);
-	struct handover *ho = &conn->ho;
-
-	/* The RR Assignment Complete counts as RLL Establish event */
-	osmo_fsm_inst_dispatch(ho->mt.new_lchan->fi, LCHAN_EV_RLL_ESTABLISH_IND, 0);
 
 	if (conn->ho.fi
 	    && lchan_state_is(ho->mt.new_lchan, LCHAN_ST_ESTABLISHED))

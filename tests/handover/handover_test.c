@@ -361,6 +361,27 @@ static void send_chan_act_ack(struct gsm_lchan *lchan, int act)
 	abis_rsl_rcvmsg(msg);
 }
 
+/* Send RLL Est Ind for SAPI[0] */
+static void send_est_ind(struct gsm_lchan *lchan)
+{
+	struct msgb *msg = msgb_alloc_headroom(256, 64, "RSL");
+	struct abis_rsl_rll_hdr *rh;
+	uint8_t chan_nr = gsm_lchan2chan_nr(lchan);
+
+	rh = (struct abis_rsl_rll_hdr *) msgb_put(msg, sizeof(*rh));
+	rh->c.msg_discr = ABIS_RSL_MDISC_RLL;
+	rh->c.msg_type = RSL_MT_EST_IND;
+	rh->ie_chan = RSL_IE_CHAN_NR;
+	rh->chan_nr = chan_nr;
+	rh->ie_link_id = RSL_IE_LINK_IDENT;
+	rh->link_id = 0x00;
+
+	msg->dst = lchan->ts->trx->bts->c0->rsl_link;
+	msg->l2h = (unsigned char *)rh;
+
+	abis_rsl_rcvmsg(msg);
+}
+
 /* send handover complete */
 static void send_ho_complete(struct gsm_lchan *lchan, bool success)
 {
@@ -370,6 +391,8 @@ static void send_ho_complete(struct gsm_lchan *lchan, bool success)
 	uint8_t *buf;
 	struct gsm48_hdr *gh;
 	struct gsm48_ho_cpl *hc;
+
+	send_est_ind(lchan);
 
 	rh = (struct abis_rsl_rll_hdr *) msgb_put(msg, sizeof(*rh));
 	rh->c.msg_discr = ABIS_RSL_MDISC_RLL;
