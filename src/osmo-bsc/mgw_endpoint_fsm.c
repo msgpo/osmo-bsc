@@ -333,12 +333,6 @@ static void on_success(struct mgwep_ci *ci, void *data)
 		}
 		break;
 
-	case MGCP_VERB_MDCX:
-		/* If an MDCX succeeded, remember the new port information */
-		ci->got_port_info = true;
-		ci->rtp_info = ci->verb_info;
-		break;
-
 	default:
 		break;
 	}
