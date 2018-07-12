@@ -510,6 +510,7 @@ struct gsm_lchan {
 		bool mgw_endpoint_available;
 		uint16_t msc_assigned_cic;
 		enum gsm0808_cause gsm0808_error_cause;
+		struct gsm_lchan *re_use_mgw_endpoint_from_lchan;
 	} activate;
 
 	/* If an event to release the lchan comes in while still waiting for responses, just mark this

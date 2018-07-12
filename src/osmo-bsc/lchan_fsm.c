@@ -424,9 +424,9 @@ static void lchan_fsm_unused(struct osmo_fsm_inst *fi, uint32_t event, void *dat
 		lchan->activate.requires_voice_stream = info->requires_voice_stream;
 		lchan->activate.msc_assigned_cic = info->msc_assigned_cic;
 		lchan->activate.concluded = false;
+		lchan->activate.re_use_mgw_endpoint_from_lchan = info->old_lchan;
 
 		if (info->old_lchan) {
-			lchan->mgw_endpoint_ci_bts = info->old_lchan->mgw_endpoint_ci_bts;
 			/* TODO: rather take info->for_conn->encr? */
 			lchan->encr = info->old_lchan->encr;
 			lchan->ms_power = info->old_lchan->ms_power;
@@ -475,11 +475,26 @@ static void lchan_fsm_unused(struct osmo_fsm_inst *fi, uint32_t event, void *dat
 	}
 }
 
+/* While activating an lchan, for example for Handover, we may want to re-use another lchan's MGW
+ * endpoint CI. If Handover fails half way, the old lchan must keep its MGW endpoint CI, and we must not
+ * clean it up. Hence keep another lchan's mgw_endpoint_ci_bts out of lchan until all is done. */
+static struct mgwep_ci *lchan_use_mgw_endpoint_ci_bts(struct gsm_lchan *lchan)
+{
+	if (lchan->mgw_endpoint_ci_bts)
+		return lchan->mgw_endpoint_ci_bts;
+	if (lchan_state_is(lchan, LCHAN_ST_ESTABLISHED))
+		return NULL;
+	if (lchan->activate.re_use_mgw_endpoint_from_lchan)
+		return lchan->activate.re_use_mgw_endpoint_from_lchan->mgw_endpoint_ci_bts;
+	return NULL;
+}
+
 static void lchan_fsm_wait_ts_ready_onenter(struct osmo_fsm_inst *fi, uint32_t prev_state)
 {
 	struct mgw_endpoint *mgwep;
 	struct mgcp_conn_peer crcx_info = {};
 	struct gsm_lchan *lchan = lchan_fi_lchan(fi);
+	struct mgwep_ci *use_mgwep_ci = lchan_use_mgw_endpoint_ci_bts(lchan);
 
 	if (lchan->release_requested) {
 		lchan_fail("Release requested while activating");
@@ -491,8 +506,7 @@ static void lchan_fsm_wait_ts_ready_onenter(struct osmo_fsm_inst *fi, uint32_t p
 		  lchan_activate_mode_name(lchan->activate.activ_for),
 		  lchan->activate.requires_voice_stream ? "yes" : "no",
 		  lchan->activate.requires_voice_stream ?
-		  	(lchan->mgw_endpoint_ci_bts ?
-			 mgwep_ci_name(lchan->mgw_endpoint_ci_bts) : "new")
+			(use_mgwep_ci ? mgwep_ci_name(use_mgwep_ci) : "new")
 			: "none",
 		  gsm_lchant_name(lchan->type),
 		  gsm48_chan_mode_name(lchan->tch_mode));
@@ -505,7 +519,7 @@ static void lchan_fsm_wait_ts_ready_onenter(struct osmo_fsm_inst *fi, uint32_t p
 	if (!lchan->activate.requires_voice_stream)
 		return;
 
-	if (lchan->mgw_endpoint_ci_bts) {
+	if (use_mgwep_ci) {
 		lchan->activate.mgw_endpoint_available = true;
 		return;
 	}
@@ -751,7 +765,7 @@ static void lchan_fsm_tch_post_endpoint_available(struct osmo_fsm_inst *fi)
 	struct gsm_lchan *lchan = lchan_fi_lchan(fi);
 
 	LOG_LCHAN(lchan, LOGL_DEBUG, "MGW endpoint: %s",
-		  mgcp_conn_peer_name(mgwep_ci_get_rtp_info(lchan->mgw_endpoint_ci_bts)));
+		  mgwep_ci_name(lchan_use_mgw_endpoint_ci_bts(lchan)));
 
 	if (is_ipaccess_bts(lchan->ts->trx->bts))
 		lchan_fsm_state_chg(LCHAN_ST_WAIT_IPACC_CRCX_ACK);
@@ -828,7 +842,7 @@ static void lchan_fsm_wait_ipacc_mdcx_ack_onenter(struct osmo_fsm_inst *fi, uint
 		return;
 	}
 
-	mgw_rtp = mgwep_ci_get_rtp_info(lchan->mgw_endpoint_ci_bts);
+	mgw_rtp = mgwep_ci_get_rtp_info(lchan_use_mgw_endpoint_ci_bts(lchan));
 
 	if (!mgw_rtp) {
 		lchan_fail("Cannot send IPACC MDCX to BTS:"
@@ -895,6 +909,15 @@ static void lchan_fsm_wait_mgw_endpoint_configured_onenter(struct osmo_fsm_inst 
 		lchan_fail("Cannot compose BTS side RTP IP address to send to MGW: '%s'",
 			   addr_str);
 		return;
+	}
+
+	/* At this point, we are taking over an old lchan's MGW endpoint (if any). */
+	if (!lchan->mgw_endpoint_ci_bts
+	    && lchan->activate.re_use_mgw_endpoint_from_lchan) {
+		lchan->mgw_endpoint_ci_bts =
+			lchan->activate.re_use_mgw_endpoint_from_lchan->mgw_endpoint_ci_bts;
+		/* The old lchan shall forget the enpoint now. */
+		lchan->activate.re_use_mgw_endpoint_from_lchan->mgw_endpoint_ci_bts = NULL;
 	}
 
 	if (!lchan->mgw_endpoint_ci_bts) {
