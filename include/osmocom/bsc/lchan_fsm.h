@@ -81,7 +81,8 @@ static inline const char *lchan_state_name(struct gsm_lchan *lchan)
 
 static inline bool lchan_state_is(struct gsm_lchan *lchan, uint32_t state)
 {
-	return lchan->fi && lchan->fi->state == state;
+	return (!lchan->fi && state == LCHAN_ST_UNUSED)
+		|| (lchan->fi && lchan->fi->state == state);
 }
 
 bool lchan_may_receive_data(struct gsm_lchan *lchan);

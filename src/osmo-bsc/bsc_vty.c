@@ -1345,10 +1345,9 @@ static void lchan_dump_short_vty(struct vty *vty, struct gsm_lchan *lchan)
 static int dump_lchan_trx_ts(struct gsm_bts_trx_ts *ts, struct vty *vty,
 			     void (*dump_cb)(struct vty *, struct gsm_lchan *))
 {
-	int lchan_nr;
-	for (lchan_nr = 0; lchan_nr < TS_MAX_LCHAN; lchan_nr++) {
-		struct gsm_lchan *lchan = &ts->lchan[lchan_nr];
-		if ((lchan->type == GSM_LCHAN_NONE) && lchan_state_is(lchan, LCHAN_ST_UNUSED))
+	struct gsm_lchan *lchan;
+	ts_for_each_lchan(lchan, ts) {
+		if (lchan_state_is(lchan, LCHAN_ST_UNUSED))
 			continue;
 		dump_cb(vty, lchan);
 	}
