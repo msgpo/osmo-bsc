@@ -821,30 +821,24 @@ static void lchan_fsm_wait_ipacc_mdcx_ack_onenter(struct osmo_fsm_inst *fi, uint
 {
 	int rc;
 	struct gsm_lchan *lchan = lchan_fi_lchan(fi);
-
-	uint32_t ip = lchan->abis_ip.bound_ip;
-	int port = lchan->abis_ip.bound_port;
+	const struct mgcp_conn_peer *mgw_rtp;
 
 	if (lchan->release_requested) {
 		lchan_fail("Release requested while activating");
 		return;
 	}
 
-	if (!ip) {
-		lchan_fail("Cannot send IPACC MDCX to BTS:"
-			   " there is no RTP IP set that the BTS should send RTP to.");
-		return;
-	}
+	mgw_rtp = mgwep_ci_get_rtp_info(lchan->mgw_endpoint_ci_bts);
 
-	if (port <= 0 || port > 65535) {
+	if (!mgw_rtp) {
 		lchan_fail("Cannot send IPACC MDCX to BTS:"
-			   " invalid port number that the BTS should send RTP to: %d", port);
+			   " there is no RTP IP+port set that the BTS should send RTP to.");
 		return;
 	}
 
 	/* Other RTP settings were already setup in lchan_fsm_wait_ipacc_crcx_ack_onenter() */
-	lchan->abis_ip.connect_ip = ip;
-	lchan->abis_ip.connect_port = port;
+	lchan->abis_ip.connect_ip = ntohl(inet_addr(mgw_rtp->addr));
+	lchan->abis_ip.connect_port = mgw_rtp->port;
 
 	/* send-recv */
 	ipacc_speech_mode_set_direction(&lchan->abis_ip.speech_mode, true);
