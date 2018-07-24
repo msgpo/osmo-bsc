@@ -757,6 +757,20 @@ struct gsm_bts *gsm_bts_alloc(struct gsm_network *net, uint8_t bts_num)
 	INIT_LLIST_HEAD(&bts->abis_queue);
 	INIT_LLIST_HEAD(&bts->loc_list);
 
+	/* Legacy compat: we used to not check the BTS codec-pref settings upon assignment until we added
+	 * checks for the BTS codec-pref in osmo-bsc 5bc43cd107597b78f701f77c7fd4cce8f923dce5, change-id
+	 * I285234e9c81de74d9fb9907fca2c443b08537435, "codec_pref: check bts codec support". From that
+	 * commit onwards, config setups without a 'codec-pref' potentially stop working, because with no
+	 * codec-pref settings, now only FR is permitted, while before the patch, we would allow any
+	 * codecs as long as MSC and the overall BSC config agree on them.  So, upon BTS initialization,
+	 * enable all codecs. These get reset to a more fine grained selection IF a 'codec-pref' appears
+	 * in the config file (see bsc_vty.c). */
+	bts->codec = (struct bts_codec_conf){
+		hr = 1,
+		efr = 1,
+		amr = 1,
+	};
+
 	return bts;
 }
 
