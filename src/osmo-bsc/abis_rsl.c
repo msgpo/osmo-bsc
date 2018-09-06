@@ -689,7 +689,7 @@ int rsl_forward_layer3_info(struct gsm_lchan *lchan, const uint8_t *l3_info, uin
 		return -EINVAL;
 
 	msg = rsl_msgb_alloc();
-	dst = msgb_put(msg, l3_info_len);
+	msg->l3h = dst = msgb_put(msg, l3_info_len);
 	memcpy(dst, l3_info, l3_info_len);
 
 	msg->lchan = lchan;
