@@ -964,24 +964,36 @@ static void print_meas_rep(struct gsm_lchan *lchan, struct gsm_meas_rep *mr)
 	}
 }
 
-static struct gsm_meas_rep *lchan_next_meas_rep(struct gsm_lchan *lchan)
+static void lchan_rx_meas_rep(struct gsm_lchan *lchan, const struct gsm_meas_rep *new_meas_rep)
 {
 	struct gsm_meas_rep *meas_rep;
 
 	meas_rep = &lchan->meas_rep[lchan->meas_rep_idx];
-	memset(meas_rep, 0, sizeof(*meas_rep));
+	*meas_rep = *new_meas_rep;
+
 	meas_rep->lchan = lchan;
 	lchan->meas_rep_idx = (lchan->meas_rep_idx + 1)
 					% ARRAY_SIZE(lchan->meas_rep);
+	lchan->meas_rep_count++;
+	lchan->meas_rep_last_seen_nr = meas_rep->nr;
 
-	return meas_rep;
+	if (mr.flags & MEAS_REP_F_MS_L1) {
+		/* store TA for next assignment/handover */
+		lchan->rqd_ta = meas_rep->ms_l1.ta;
+	}
+
+	LOGP(DRSL, LOGL_DEBUG, "%s: meas_rep_count++=%d meas_rep_last_seen_nr=%u\n",
+	     gsm_lchan_name(lchan), lchan->meas_rep_count, lchan->meas_rep_last_seen_nr);
+	print_meas_rep(lchan, meas_rep);
+
+	send_lchan_signal(S_LCHAN_MEAS_REP, lchan, meas_rep);
 }
 
 static int rsl_rx_meas_res(struct msgb *msg)
 {
 	struct abis_rsl_dchan_hdr *dh = msgb_l2(msg);
 	struct tlv_parsed tp;
-	struct gsm_meas_rep *mr = lchan_next_meas_rep(msg->lchan);
+	struct gsm_meas_rep mr = {};
 	uint8_t len;
 	const uint8_t *val;
 	int rc;
@@ -991,74 +1003,61 @@ static int rsl_rx_meas_res(struct msgb *msg)
 		return 0;
 	}
 
-	memset(mr, 0, sizeof(*mr));
-	mr->lchan = msg->lchan;
-
 	rsl_tlv_parse(&tp, dh->data, msgb_l2len(msg)-sizeof(*dh));
 
 	if (!TLVP_PRESENT(&tp, RSL_IE_MEAS_RES_NR) ||
 	    !TLVP_PRESENT(&tp, RSL_IE_UPLINK_MEAS) ||
 	    !TLVP_PRESENT(&tp, RSL_IE_BS_POWER)) {
 		LOGP(DRSL, LOGL_ERROR, "%s Measurement Report lacks mandatory IEs\n",
-		     gsm_lchan_name(mr->lchan));
+		     gsm_lchan_name(msg->lchan));
 		return -EIO;
 	}
 
 	/* Mandatory Parts */
-	mr->nr = *TLVP_VAL(&tp, RSL_IE_MEAS_RES_NR);
+	mr.nr = *TLVP_VAL(&tp, RSL_IE_MEAS_RES_NR);
 
 	len = TLVP_LEN(&tp, RSL_IE_UPLINK_MEAS);
 	val = TLVP_VAL(&tp, RSL_IE_UPLINK_MEAS);
 	if (len >= 3) {
 		if (val[0] & 0x40)
-			mr->flags |= MEAS_REP_F_DL_DTX;
-		mr->ul.full.rx_lev = val[0] & 0x3f;
-		mr->ul.sub.rx_lev = val[1] & 0x3f;
-		mr->ul.full.rx_qual = val[2]>>3 & 0x7;
-		mr->ul.sub.rx_qual = val[2] & 0x7;
+			mr.flags |= MEAS_REP_F_DL_DTX;
+		mr.ul.full.rx_lev = val[0] & 0x3f;
+		mr.ul.sub.rx_lev = val[1] & 0x3f;
+		mr.ul.full.rx_qual = val[2]>>3 & 0x7;
+		mr.ul.sub.rx_qual = val[2] & 0x7;
 	}
 
-	mr->bs_power = *TLVP_VAL(&tp, RSL_IE_BS_POWER);
+	mr.bs_power = *TLVP_VAL(&tp, RSL_IE_BS_POWER);
 
 	/* Optional Parts */
 	if (TLVP_PRESENT(&tp, RSL_IE_MS_TIMING_OFFSET)) {
 		/* According to 3GPP TS 48.058 § MS Timing Offset = Timing Offset field - 63 */
-		mr->ms_timing_offset = *TLVP_VAL(&tp, RSL_IE_MS_TIMING_OFFSET) - 63;
-		mr->flags |= MEAS_REP_F_MS_TO;
+		mr.ms_timing_offset = *TLVP_VAL(&tp, RSL_IE_MS_TIMING_OFFSET) - 63;
+		mr.flags |= MEAS_REP_F_MS_TO;
 	}
 
 	if (TLVP_PRESENT(&tp, RSL_IE_L1_INFO)) {
 		struct e1inp_sign_link *sign_link = msg->dst;
 
 		val = TLVP_VAL(&tp, RSL_IE_L1_INFO);
-		mr->flags |= MEAS_REP_F_MS_L1;
-		mr->ms_l1.pwr = ms_pwr_dbm(sign_link->trx->bts->band, val[0] >> 3);
+		mr.flags |= MEAS_REP_F_MS_L1;
+		mr.ms_l1.pwr = ms_pwr_dbm(sign_link->trx->bts->band, val[0] >> 3);
 		if (val[0] & 0x04)
-			mr->flags |= MEAS_REP_F_FPC;
-		mr->ms_l1.ta = val[1];
+			mr.flags |= MEAS_REP_F_FPC;
+		mr.ms_l1.ta = val[1];
 		/* BS11 and Nokia reports TA shifted by 2 bits */
 		if (msg->lchan->ts->trx->bts->type == GSM_BTS_TYPE_BS11
 		 || msg->lchan->ts->trx->bts->type == GSM_BTS_TYPE_NOKIA_SITE)
-			mr->ms_l1.ta >>= 2;
-		/* store TA for next assignment/handover */
-		mr->lchan->rqd_ta = mr->ms_l1.ta;
+			mr.ms_l1.ta >>= 2;
 	}
 	if (TLVP_PRESENT(&tp, RSL_IE_L3_INFO)) {
 		msg->l3h = (uint8_t *) TLVP_VAL(&tp, RSL_IE_L3_INFO);
-		rc = gsm48_parse_meas_rep(mr, msg);
+		rc = gsm48_parse_meas_rep(&mr, msg);
 		if (rc < 0)
 			return rc;
 	}
 
-	mr->lchan->meas_rep_count++;
-	mr->lchan->meas_rep_last_seen_nr = mr->nr;
-	LOGP(DRSL, LOGL_DEBUG, "%s: meas_rep_count++=%d meas_rep_last_seen_nr=%u\n",
-	     gsm_lchan_name(mr->lchan), mr->lchan->meas_rep_count, mr->lchan->meas_rep_last_seen_nr);
-
-	print_meas_rep(msg->lchan, mr);
-
-	send_lchan_signal(S_LCHAN_MEAS_REP, msg->lchan, mr);
-
+	lchan_rx_meas_rep(msg->lchan, &mr);
 	return 0;
 }
 
