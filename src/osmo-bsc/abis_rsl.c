@@ -964,9 +964,39 @@ static void print_meas_rep(struct gsm_lchan *lchan, struct gsm_meas_rep *mr)
 	}
 }
 
+/* A measurement report number has just come in, make sure no old ones linger.  If there was a
+ * measurement report number gap, also clear out those numbers, to make sure we only keep recent
+ * measurement reports.
+ *  [10, 11, 12, 14, 15 <-last, prev-cycle-> 99, 100, 101]
+ * If, however unlikely, the next incoming report nr were 101, we'd have two reports with the same
+ * number, and 99 and 100 would look like they were quite recent, though they were from the last cycle.
+ */
+static void lchan_clear_meas_rep_nr(struct gsm_lchan *lchan, uint8_t new_nr)
+{
+	int i;
+	for (i = 0; i < ARRAY_SIZE(lchan->meas_rep); i++) {
+		struct gsm_meas_rep *meas_rep = &lchan->meas_rep[i];
+		bool clear;
+		if (lchan->meas_rep_last_seen_nr < new_nr) {
+			/* no wrap around 255 involved. e.g. last = 10, new_nr = 15, drop 11..15 */
+			clear = new_nr > lchan->meas_rep_last_seen_nr
+				&& meas_rep->nr <= new_nr;
+		} else {
+			/* new number is past 255 wrap.
+			 * e.g. last = 253; new_nr = 4; drop 254..4. */
+			clear = meas_rep->nr > lchan->meas_rep_last_seen_nr
+				|| meas_rep->nr <= new_nr;
+		}
+		if (clear)
+			*meas_rep = (struct gsm_meas_rep){};
+	}
+}
+
 static void lchan_rx_meas_rep(struct gsm_lchan *lchan, const struct gsm_meas_rep *new_meas_rep)
 {
 	struct gsm_meas_rep *meas_rep;
+
+	lchan_clear_meas_rep_nr(lchan, new_meas_rep->nr);
 
 	meas_rep = &lchan->meas_rep[lchan->meas_rep_idx];
 	*meas_rep = *new_meas_rep;
