@@ -625,8 +625,16 @@ static uint8_t check_requirements_remote_bss(struct gsm_lchan *lchan,
 {
 	uint8_t requirement = 0;
 	unsigned int penalty_time;
+	struct gsm_bts *current_bts = lchan->ts->trx->bts;
 
 	/* Requirement A */
+
+	/* the handover/assignment must not be disabled */
+	if (!ho_get_hodec2_inter_bsc_active(current_bts->ho)) {
+		LOGPHOLCHANTOREMOTE(lchan, cil, LOGL_DEBUG,
+				    "not a candidate, inter-BSC handover is disabled from this BTS\n");
+		return 0;
+	}
 
 	/* the handover penalty timer must not run for this bts */
 	penalty_time = conn_penalty_time_remaining(lchan->conn, cil);
