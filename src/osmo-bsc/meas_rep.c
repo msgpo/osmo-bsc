@@ -27,6 +27,10 @@
 static int get_field(const struct gsm_meas_rep *rep,
 		     enum meas_rep_field field)
 {
+	/* Uninitialized array index? */
+	if (!rep->lchan)
+		return -EINVAL;
+
 	switch (field) {
 	case MEAS_REP_DL_RXLEV_FULL:
 		if (!(rep->flags & MEAS_REP_F_DL_VALID))
@@ -52,9 +56,9 @@ static int get_field(const struct gsm_meas_rep *rep,
 		return rep->ul.full.rx_qual;
 	case MEAS_REP_UL_RXQUAL_SUB:
 		return rep->ul.sub.rx_qual;
+	default:
+		return -EINVAL;
 	}
-
-	return 0;
 }
 
 
