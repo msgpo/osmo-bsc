@@ -594,6 +594,7 @@ static int bitvec2freq_list(uint8_t *chan_list, struct bitvec *bv,
 struct generate_bcch_chan_list__ni_iter_data {
 	struct gsm_bts *bts;
 	struct bitvec *bv;
+	unsigned int count;
 };
 
 static bool generate_bcch_chan_list__ni_iter_cb(const struct neighbor_ident_key *key,
@@ -607,6 +608,7 @@ static bool generate_bcch_chan_list__ni_iter_cb(const struct neighbor_ident_key 
 		return true;
 
 	bitvec_set_bit_pos(data->bv, key->arfcn, 1);
+	data->count ++;
 	return true;
 }
 
@@ -632,32 +634,31 @@ static int generate_bcch_chan_list(uint8_t *chan_list, struct gsm_bts *bts,
 
 	/* Generate list of neighbor cells if we are in automatic mode */
 	if (bts->neigh_list_manual_mode == NL_MODE_AUTOMATIC) {
+		struct generate_bcch_chan_list__ni_iter_data ni_data = {
+			.bv = bv,
+			.bts = bts,
+		};
+
 		/* Zero-initialize the bit-vector */
 		memset(bv->data, 0, bv->data_len);
 
-		if (llist_empty(&bts->local_neighbors)) {
-			/* There are no explicit neighbors, assume all BTS are. */
-			llist_for_each_entry(cur_bts, &bts->network->bts_list, list) {
-				if (cur_bts == bts)
-					continue;
-				bitvec_set_bit_pos(bv, cur_bts->c0->arfcn, 1);
-			}
-		} else {
+		/* Add neighboring BSS cells' ARFCNs */
+		neighbor_ident_iter(bts->network->neighbor_bss_cells,
+				    generate_bcch_chan_list__ni_iter_cb, &ni_data);
+
+		if (!llist_empty(&bts->local_neighbors)) {
 			/* Only add explicit neighbor cells */
 			struct gsm_bts_ref *neigh;
 			llist_for_each_entry(neigh, &bts->local_neighbors, entry) {
 				bitvec_set_bit_pos(bv, neigh->bts->c0->arfcn, 1);
 			}
-		}
-
-		/* Also add neighboring BSS cells' ARFCNs */
-		{
-			struct generate_bcch_chan_list__ni_iter_data data = {
-				.bv = bv,
-				.bts = bts,
-			};
-			neighbor_ident_iter(bts->network->neighbor_bss_cells,
-					    generate_bcch_chan_list__ni_iter_cb, &data);
+		} else if (!ni_data.count) {
+			/* There are no explicit neighbors, assume all local BTS are. */
+			llist_for_each_entry(cur_bts, &bts->network->bts_list, list) {
+				if (cur_bts == bts)
+					continue;
+				bitvec_set_bit_pos(bv, cur_bts->c0->arfcn, 1);
+			}
 		}
 	}
 
