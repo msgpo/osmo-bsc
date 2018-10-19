@@ -72,6 +72,8 @@ void bsc_tx_bssmap_ho_failure(struct gsm_subscriber_connection *conn);
 
 struct gsm_bts *bts_by_neighbor_ident(const struct gsm_network *net,
 				      const struct neighbor_ident_key *search_for);
+struct gsm_bts *bts_by_arfcn_bsic(const struct gsm_network *net, uint16_t arfcn, uint8_t bsic,
+				  unsigned int match_idx);
 struct neighbor_ident_key *bts_ident_key(const struct gsm_bts *bts);
 
 void handover_parse_inter_bsc_mt(struct gsm_subscriber_connection *conn,

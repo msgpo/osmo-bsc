@@ -125,6 +125,9 @@ int bts_handover_count(struct gsm_bts *bts, int ho_scopes)
 	return count;
 }
 
+/* Look for a local BTS that is an explicit neighbor of a given BTS.
+ * The returned BTS pointer is an explicit neighbor of search_for->from_bts.
+ * To look for an ARFCN+BSIC match without the neighbor relation, see bts_by_arfcn_bsic(). */
 struct gsm_bts *bts_by_neighbor_ident(const struct gsm_network *net,
 				      const struct neighbor_ident_key *search_for)
 {
@@ -155,6 +158,42 @@ struct gsm_bts *bts_by_neighbor_ident(const struct gsm_network *net,
 		return found;
 
 	return wildcard_match;
+}
+
+/* Look for a local BTS that matches the given ARFCN+BSIC.
+ * Within a BSS, a given ARFCN+BSIC pair can be re-used; when match_idx is zero, return the first match,
+ * when 1 return the second match etc.. If no such match exists, return NULL.  To look for an ARFCN+BSIC
+ * match with explicit neighbor relation, see bts_by_neighbor_ident(). */
+struct gsm_bts *bts_by_arfcn_bsic(const struct gsm_network *net, uint16_t arfcn, uint8_t bsic,
+				  unsigned int match_idx)
+{
+	struct gsm_bts *bts;
+
+	llist_for_each_entry(bts, &net->bts_list, list) {
+		struct gsm_bts_trx *trx;
+		bool match;
+		if (bts->bsic != bsic)
+			continue;
+		match = false;
+		llist_for_each_entry(trx, &bts->trx_list, list) {
+			if (trx->arfcn != arfcn)
+				continue;
+			match = true;
+			break;
+		}
+
+		if (!match)
+			continue;
+
+		if (match_idx > 0) {
+			match_idx --;
+			continue;
+		}
+
+		return bts;
+	}
+
+	return NULL;
 }
 
 struct neighbor_ident_key *bts_ident_key(const struct gsm_bts *bts)

@@ -313,6 +313,25 @@ void handover_start(struct handover_out_req *req)
 		return;
 	}
 
+	/* There is no matching explicit neighbor cell. This might actually be a legacy config using
+	 * 'neighbor-list' configuration instead of the new 'neighbor' relations. For the legacy config,
+	 * we need to actually match by ARFCN+BSIC and hopefully get only one match. */
+	bts = bts_by_arfcn_bsic(conn->network, req->target_nik.arfcn, req->target_nik.bsic, 0);
+	if (bts) {
+		struct gsm_bts *bts2 = bts_by_arfcn_bsic(conn->network, req->target_nik.arfcn,
+							 req->target_nik.bsic, 1);
+		/* Warn if the ARFCN+BSIC is ambiguous -- but attempt to continue with the first BTS
+		 * found. */
+		if (bts2)
+			LOG_HO(conn, LOGL_ERROR, "Ambiguous neighbor ARFCN+BSIC:"
+			       " at least BTS %u and BTS %u have the same ARFCN+BSIC=%u+%u."
+			       " Rather use explicit neighbor cell relations! See 'neighbor'.\n",
+			       bts->nr, bts2->nr, req->target_nik.arfcn, req->target_nik.bsic);
+		ho->new_bts = bts;
+		handover_start_intra_bsc(conn);
+		return;
+	}
+
 	LOG_HO(conn, LOGL_ERROR, "Cannot handover %s: neighbor unknown\n",
 	       neighbor_ident_key_name(&req->target_nik));
 	handover_end(conn, HO_RESULT_FAIL_NO_CHANNEL);
