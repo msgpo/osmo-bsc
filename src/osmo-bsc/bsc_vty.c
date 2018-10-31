@@ -72,6 +72,7 @@
 #include <osmocom/bsc/lchan_select.h>
 #include <osmocom/bsc/gsm_timers.h>
 #include <osmocom/bsc/mgw_endpoint_fsm.h>
+#include <osmocom/gsm/gsm48_ie.h>
 
 #include <inttypes.h>
 
@@ -4347,6 +4348,82 @@ DEFUN(bts_resend, bts_resend_cmd,
 }
 
 
+static void vty_dump_freq_list(struct vty *vty, uint8_t *freq_list, size_t freq_list_len)
+{
+	int arfcn;
+	struct gsm_sysinfo_freq f[1024] = {};
+	int count = 0;
+
+	gsm48_decode_freq_list(f, freq_list, freq_list_len, 0xff, 1);
+
+	for (arfcn = 0; arfcn < 1024; arfcn++) {
+		if (!f[arfcn].mask)
+			continue;
+		vty_out(vty, " %d", arfcn);
+		count ++;
+	}
+
+	if (!count)
+		vty_out(vty, " -");
+}
+
+DEFUN(show_bts_neighbor_si, show_bts_neighbor_si_cmd,
+      "show bts <0-255> neighbor-si",
+      SHOW_STR "Display information about a BTS\n" "BTS number\n"
+      "List neighbor cells' ARFCN+BSIC as would be sent via System Information\n")
+{
+	struct gsm_network *net;
+	struct gsm_bts *bts;
+	uint8_t bts_nr;
+	int rc;
+	uint8_t frequency_list[16] = {};
+	int i;
+
+	net = gsmnet_from_vty(vty);
+
+	bts_nr = atoi(argv[0]);
+
+	bts = gsm_bts_num(net, bts_nr);
+	if (!bts) {
+		vty_out(vty, "BTS Nr. %d could not be found.%s", bts_nr, VTY_NEWLINE);
+		return CMD_WARNING;
+	}
+
+	/* Actually invoke the SI frequency list composition code and then decode the bits, to make sure
+	 * we list exactly what will be sent out to the BTS with all special conditions taken into
+	 * account. */
+
+	vty_out(vty, "neighbor-list mode %s%s",
+		get_value_string(bts_neigh_mode_strs, bts->neigh_list_manual_mode), VTY_NEWLINE);
+
+	struct {
+		char *si_label;
+		bool si5;
+		bool bis;
+		bool ter;
+	} si[] = {
+		{ .si_label="SI2", .si5=false, .bis=false, .ter=false, },
+		{ .si_label="SI2bis", .si5=false, .bis=true, .ter=false, },
+		{ .si_label="SI2ter", .si5=false, .bis=false, .ter=true, },
+		{ .si_label="SI5", .si5=true, .bis=false, .ter=false, },
+		{ .si_label="SI5bis", .si5=true, .bis=true, .ter=false, },
+	};
+
+	vty_out(vty, "ARFCNs to be sent on System Information IEs:%s", VTY_NEWLINE);
+	for (i = 0; i < ARRAY_SIZE(si); i++) {
+		vty_out(vty, "  %6s ", si[i].si_label);
+		rc = generate_bcch_chan_list(frequency_list, bts, si[i].si5, si[i].bis, si[i].ter);
+		if (rc) {
+			vty_out(vty, "Failed to generate frequency list%s", VTY_NEWLINE);
+			return CMD_WARNING;
+		}
+		vty_dump_freq_list(vty, frequency_list, sizeof(frequency_list));
+		vty_out(vty, "%s", VTY_NEWLINE);
+	}
+
+	return CMD_SUCCESS;
+}
+
 DEFUN(smscb_cmd, smscb_cmd_cmd,
 	"bts <0-255> smscb-command <1-4> HEXSTRING",
 	"BTS related commands\n" BTS_NR_STR
@@ -4894,6 +4971,7 @@ int bsc_vty_init(struct gsm_network *network)
 
 	install_element_ve(&bsc_show_net_cmd);
 	install_element_ve(&show_bts_cmd);
+	install_element_ve(&show_bts_neighbor_si_cmd);
 	install_element_ve(&show_rejected_bts_cmd);
 	install_element_ve(&show_trx_cmd);
 	install_element_ve(&show_ts_cmd);

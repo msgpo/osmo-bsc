@@ -1,0 +1,161 @@
+OsmoBSC> ### Verify Neighbor frequency lists in System Information
+
+OsmoBSC> enable
+OsmoBSC# configure terminal
+
+OsmoBSC(config)# log stderr
+OsmoBSC(config-log)# logging level rr debug
+OsmoBSC(config-log)# logging filter all 1
+OsmoBSC(config-log)# exit
+OsmoBSC(config)# network
+
+OsmoBSC(config-net)# bts 0
+OsmoBSC(config-net-bts)# type sysmobts
+OsmoBSC(config-net-bts)# band 900
+OsmoBSC(config-net-bts)# base_station_id_code 10
+OsmoBSC(config-net-bts)# location_area_code 20
+OsmoBSC(config-net-bts)# cell_identity 30
+OsmoBSC(config-net-bts)# trx 0
+OsmoBSC(config-net-bts-trx)# arfcn 40
+OsmoBSC(config-net-bts-trx)# exit
+OsmoBSC(config-net-bts)# exit
+
+OsmoBSC(config-net)# bts 1
+OsmoBSC(config-net-bts)# type sysmobts
+OsmoBSC(config-net-bts)# band 900
+OsmoBSC(config-net-bts)# base_station_id_code 11
+OsmoBSC(config-net-bts)# location_area_code 21
+OsmoBSC(config-net-bts)# cell_identity 31
+OsmoBSC(config-net-bts)# trx 0
+OsmoBSC(config-net-bts-trx)# arfcn 41
+OsmoBSC(config-net-bts-trx)# exit
+OsmoBSC(config-net-bts)# exit
+
+OsmoBSC(config-net)# bts 2
+OsmoBSC(config-net-bts)# type sysmobts
+OsmoBSC(config-net-bts)# band 900
+OsmoBSC(config-net-bts)# base_station_id_code 12
+OsmoBSC(config-net-bts)# location_area_code 22
+OsmoBSC(config-net-bts)# cell_identity 65535
+OsmoBSC(config-net-bts)# trx 0
+OsmoBSC(config-net-bts-trx)# arfcn 42
+OsmoBSC(config-net-bts-trx)# exit
+OsmoBSC(config-net-bts)# exit
+
+OsmoBSC(config-net)# do show bts 0 neighbor-si
+neighbor-list mode automatic
+ARFCNs to be sent on System Information IEs:
+     SI2  41 42
+  SI2bis  -
+  SI2ter  -
+     SI5  41 42
+  SI5bis  -
+OsmoBSC(config-net)# do show bts 1 neighbor-si
+neighbor-list mode automatic
+ARFCNs to be sent on System Information IEs:
+     SI2  40 42
+  SI2bis  -
+  SI2ter  -
+     SI5  40 42
+  SI5bis  -
+OsmoBSC(config-net)# do show bts 2 neighbor-si
+neighbor-list mode automatic
+ARFCNs to be sent on System Information IEs:
+     SI2  40 41
+  SI2bis  -
+  SI2ter  -
+     SI5  40 41
+  SI5bis  -
+
+OsmoBSC(config-net)# bts 0
+OsmoBSC(config-net-bts)# neighbor bts 1
+% BTS 0 now has local neighbor BTS 1 with LAC 21 CI 31 and ARFCN 41 BSIC 11
+OsmoBSC(config-net-bts)# exit
+OsmoBSC(config-net)# bts 1
+OsmoBSC(config-net-bts)# neighbor bts 0
+% BTS 1 now has local neighbor BTS 0 with LAC 20 CI 30 and ARFCN 40 BSIC 10
+OsmoBSC(config-net-bts)# exit
+
+OsmoBSC(config-net)# do show bts 0 neighbor-si
+neighbor-list mode automatic
+ARFCNs to be sent on System Information IEs:
+     SI2  41
+  SI2bis  -
+  SI2ter  -
+     SI5  41
+  SI5bis  -
+OsmoBSC(config-net)# do show bts 1 neighbor-si
+neighbor-list mode automatic
+ARFCNs to be sent on System Information IEs:
+     SI2  40
+  SI2bis  -
+  SI2ter  -
+     SI5  40
+  SI5bis  -
+OsmoBSC(config-net)# do show bts 2 neighbor-si
+neighbor-list mode automatic
+ARFCNs to be sent on System Information IEs:
+     SI2  40 41
+  SI2bis  -
+  SI2ter  -
+     SI5  40 41
+  SI5bis  -
+
+OsmoBSC(config-net)# bts 2
+OsmoBSC(config-net-bts)# neighbor-list mode manual-si5
+OsmoBSC(config-net-bts)# neighbor-list add arfcn 23
+OsmoBSC(config-net-bts)# neighbor-list add arfcn 24
+OsmoBSC(config-net-bts)# neighbor-list add arfcn 25
+OsmoBSC(config-net-bts)# si5 neighbor-list add arfcn 51
+OsmoBSC(config-net-bts)# si5 neighbor-list add arfcn 52
+OsmoBSC(config-net-bts)# exit
+
+OsmoBSC(config-net)# do show bts 2 neighbor-si
+neighbor-list mode manual-si5
+ARFCNs to be sent on System Information IEs:
+     SI2  23 24 25
+  SI2bis  -
+  SI2ter  -
+     SI5  51 52
+  SI5bis  -
+
+OsmoBSC(config-net)# bts 2
+OsmoBSC(config-net-bts)# neighbor-list mode manual
+OsmoBSC(config-net-bts)# exit
+
+OsmoBSC(config-net)# do show bts 2 neighbor-si
+neighbor-list mode manual
+ARFCNs to be sent on System Information IEs:
+     SI2  23 24 25
+  SI2bis  -
+  SI2ter  -
+     SI5  23 24 25
+  SI5bis  -
+
+OsmoBSC(config-net)# ### Configuring an explicit neighbor mapping, but mode is still manual
+OsmoBSC(config-net)# bts 2
+OsmoBSC(config-net-bts)# neighbor bts 1
+% BTS 2 now has local neighbor BTS 1 with LAC 21 CI 31 and ARFCN 41 BSIC 11
+OsmoBSC(config-net-bts)# exit
+
+OsmoBSC(config-net)# do show bts 2 neighbor-si
+neighbor-list mode manual
+ARFCNs to be sent on System Information IEs:
+     SI2  23 24 25
+  SI2bis  -
+  SI2ter  -
+     SI5  23 24 25
+  SI5bis  -
+
+OsmoBSC(config-net)# bts 2
+OsmoBSC(config-net-bts)# neighbor-list mode automatic
+OsmoBSC(config-net-bts)# exit
+
+OsmoBSC(config-net)# do show bts 2 neighbor-si
+neighbor-list mode automatic
+ARFCNs to be sent on System Information IEs:
+     SI2  41
+  SI2bis  -
+  SI2ter  -
+     SI5  41
+  SI5bis  -

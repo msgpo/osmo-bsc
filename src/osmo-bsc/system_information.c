@@ -619,7 +619,7 @@ static bool generate_bcch_chan_list__ni_iter_cb(const struct neighbor_ident_key 
  *  \param[in] bis Are we generating SIXbis (true) or not (false)
  *  \param[in] ter Are we generating SIXter (true) or not (false)
  */
-static int generate_bcch_chan_list(uint8_t *chan_list, struct gsm_bts *bts,
+int generate_bcch_chan_list(uint8_t *chan_list, struct gsm_bts *bts,
 	bool si5, bool bis, bool ter)
 {
 	struct gsm_bts *cur_bts;

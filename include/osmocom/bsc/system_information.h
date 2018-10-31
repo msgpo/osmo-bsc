@@ -19,4 +19,7 @@ int bts_earfcn_add(struct gsm_bts *bts, uint16_t earfcn, uint8_t thresh_hi, uint
 int bts_uarfcn_del(struct gsm_bts *bts, uint16_t arfcn, uint16_t scramble);
 int bts_uarfcn_add(struct gsm_bts *bts, uint16_t arfcn, uint16_t scramble,
 		   bool diversity);
+
+int generate_bcch_chan_list(uint8_t *chan_list, struct gsm_bts *bts,
+	bool si5, bool bis, bool ter);
 #endif
