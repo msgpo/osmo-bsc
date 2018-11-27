@@ -1665,6 +1665,11 @@ static int ho_or_as(struct vty *vty, const char *argv[], int argc)
 
 	/* Find the connection/lchan that we want to handover */
 	llist_for_each_entry(conn, &net->subscr_conns, entry) {
+		if (!conn->lchan) {
+			LOGP(DHO, LOGL_ERROR, "XXXXX found a conn without an lchan: %s %s\n",
+			     osmo_fsm_inst_name(conn->fi), bsc_subscr_name(conn->bsub));
+			continue;
+		}
 		if (conn_get_bts(conn)->nr == bts_nr &&
 		    conn->lchan->ts->trx->nr == trx_nr &&
 		    conn->lchan->ts->nr == ts_nr && conn->lchan->nr == ss_nr) {
