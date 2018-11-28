@@ -147,7 +147,9 @@ static int ts_lchans_waiting(struct gsm_bts_trx_ts *ts)
 {
 	struct gsm_lchan *lchan;
 	int count = 0;
-	ts_for_each_lchan(lchan, ts)
+	/* Make sure we count lchans waiting for a dyn TS that is still in pchan_is == PDCH:
+	 * ts_subslots(PDCH) == 0, so rather use pchan_on_init's subslot count. */
+	ts_as_pchan_for_each_lchan(lchan, ts, ts->pchan_on_init)
 		if (lchan->fi->state == LCHAN_ST_WAIT_TS_READY)
 			count++;
 	return count;
@@ -860,7 +862,9 @@ static struct osmo_fsm ts_fsm = {
 bool ts_is_lchan_waiting_for_pchan(struct gsm_bts_trx_ts *ts, enum gsm_phys_chan_config *target_pchan)
 {
 	struct gsm_lchan *lchan;
-	ts_for_each_lchan(lchan, ts) {
+	/* Make sure we count lchans waiting for a dyn TS that is still in pchan_is == PDCH:
+	 * ts_subslots(PDCH) == 0, so rather use pchan_on_init's subslot count. */
+	ts_as_pchan_for_each_lchan(lchan, ts, ts->pchan_on_init) {
 		if (lchan->fi->state == LCHAN_ST_WAIT_TS_READY) {
 			if (target_pchan)
 				*target_pchan = gsm_pchan_by_lchan_type(lchan->type);
