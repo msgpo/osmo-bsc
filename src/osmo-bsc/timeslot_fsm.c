@@ -123,7 +123,10 @@ static void ts_lchans_dispatch(struct gsm_bts_trx_ts *ts, int lchan_state, uint3
 {
 	struct gsm_lchan *lchan;
 
-	ts_for_each_lchan(lchan, ts) {
+	/* Make sure a LCHAN_EV_TS_ERROR also reaches lchans waiting on a dyn TS that is still in
+	 * pchan_is == PDCH (e.g. because of a PDCH DEACT NACK event): ts_subslots(PDCH) == 0, so rather
+	 * use pchan_on_init's subslot count. */
+	ts_as_pchan_for_each_lchan(lchan, ts, ts->pchan_on_init) {
 		if (lchan_state >= 0
 		    && !lchan_state_is(lchan, lchan_state))
 			continue;
