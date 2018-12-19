@@ -369,6 +369,34 @@ static int check_for_existing_lchan(struct gsm_subscriber_connection *conn)
 {
 	struct assignment_request *req = &conn->assignment.req;
 
+	/* CHANNEL RE-USE CURRENTLY DISABLED.
+	 *
+	 * This code path would re-use an existing lchan if it already satisfies the mode and rate requested by
+	 * the MSC.
+	 *
+	 * Practical situations where this might arise:
+	 * (a) We were out of SDCCH channels and assigned a TCH channel for signalling, and now that TCH should
+	 *     take on the voice stream.
+	 * (b) A call is coming in while another call is ongoing. Then, the user may choose to hang up the
+	 *     current call, and continue on the new call instead. In that scenario, the MSC will send us
+	 *     another Assignment Command with a different remote RTP address to route RTP to.
+	 *
+	 * In both cases, an existing lchan FSM already in the ACTIVE state needs to set up a voice stream after
+	 * the fact. This is actually not implemented. Hence both scenarios above will end in a voice stream
+	 * failure, aborting the call.
+	 *
+	 * By not re-using the current lchan, we set up a new lchan the same way we always do, and (a) enabling
+	 * voice and (b) switching over to the new caller works.
+	 *
+	 * Hence, disable this lchan re-use until we can re-use an lchan properly.
+	 *
+	 * Test scenario for (b):
+	 *  - from A, call B.
+	 *  - from C, call B; B rings during ongoing call.
+	 *  - in B, pick up the call, choose to drop the old call.
+	 */
+	return 0;
+
 	if (!conn->lchan)
 		return 0;
 
@@ -493,6 +521,8 @@ void assignment_fsm_start(struct gsm_subscriber_connection *conn, struct gsm_bts
 	/* There may be an already existing lchan, if yes, try to work with
 	 * the existing lchan */
 	if (check_for_existing_lchan(conn))
+		/* FIXME: discard the assignment.fi allocated above, and hence properly dispatch the
+		 * GSCON_EV_ASSIGNMENT_END event */
 		return;
 
 	/* Try to allocate a new lchan with the preferred codec/rate choice */
