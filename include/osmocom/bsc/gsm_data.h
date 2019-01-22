@@ -613,6 +613,10 @@ struct gsm_lchan {
 	struct gsm48_req_ref *rqd_ref;
 
 	struct gsm_subscriber_connection *conn;
+
+	/* Debug feature: When set to true via VTY, the channel allocator will
+	 * not use this lchan. */
+	bool disabled;
 };
 
 /* One Timeslot in a TRX */

@@ -1372,10 +1372,11 @@ static void lchan_dump_full_vty(struct vty *vty, struct gsm_lchan *lchan)
 		lchan->ts->trx->bts->nr, lchan->ts->trx->nr, lchan->ts->nr,
 		lchan->nr, gsm_lchant_name(lchan->type), VTY_NEWLINE);
 	vty_out_dyn_ts_details(vty, lchan->ts);
-	vty_out(vty, "  Connection: %u, State: %s%s%s%s",
+	vty_out(vty, "  Connection: %u, State: %s%s%s%s%s",
 		lchan->conn ? 1: 0, lchan_state_name(lchan),
 		lchan->fi && lchan->fi->state == LCHAN_ST_BORKEN ? " Error reason: " : "",
 		lchan->fi && lchan->fi->state == LCHAN_ST_BORKEN ? lchan->last_error : "",
+		lchan->disabled ? " (disabled)" : "",
 		VTY_NEWLINE);
 	vty_out(vty, "  BS Power: %u dBm, MS Power: %u dBm%s",
 		lchan->ts->trx->nominal_power - lchan->ts->trx->max_power_red
@@ -1430,12 +1431,13 @@ static void lchan_dump_short_vty(struct vty *vty, struct gsm_lchan *lchan)
 		gsm_pchan_name(lchan->ts->pchan_on_init));
 	vty_out_dyn_ts_status(vty, lchan->ts);
 	vty_out(vty, ", Lchan %u, Type %s, State %s - "
-		"L1 MS Power: %u dBm RXL-FULL-dl: %4d dBm RXL-FULL-ul: %4d dBm%s",
+		"L1 MS Power: %u dBm RXL-FULL-dl: %4d dBm RXL-FULL-ul: %4d dBm%s%s",
 		lchan->nr,
 		gsm_lchant_name(lchan->type), lchan_state_name(lchan),
 		mr->ms_l1.pwr,
 		rxlev2dbm(mr->dl.full.rx_lev),
 		rxlev2dbm(mr->ul.full.rx_lev),
+		lchan->disabled ? " (disabled)" : "",
 		VTY_NEWLINE);
 }
 
@@ -4788,6 +4790,34 @@ DEFUN(lchan_act, lchan_act_cmd,
 	return CMD_SUCCESS;
 }
 
+/* Debug command to temporarily disable certain timeslots in order to force
+ * the channel allocator to pick one specific or from a group of specific
+ * timeslots. */
+DEFUN_HIDDEN(ts_disable, ts_disable_cmd,
+	"bts <0-255> trx <0-255> timeslot <0-7> sub-slot <0-7> (disable|enable)",
+	BTS_NR_TRX_TS_SS_STR2
+	"Disable channel allocation on this timeslot (for debugging)\n"
+	"Enable channel allocation on this timeslot (for debugging)\n")
+{
+	struct gsm_bts_trx_ts *ts;
+	struct gsm_lchan *lchan;
+	int ss_nr = atoi(argv[3]);
+	ts = vty_get_ts(vty, argv[0], argv[1], argv[2]);
+	if (!ts)
+		return CMD_WARNING;
+	lchan = &ts->lchan[ss_nr];
+	if (!lchan)
+		return CMD_WARNING;
+
+	if (!strcmp(argv[4], "disable"))
+		lchan->disabled = true;
+	else
+		lchan->disabled = false;
+
+	return CMD_SUCCESS;
+}
+
+
 DEFUN(lchan_mdcx, lchan_mdcx_cmd,
 	"bts <0-255> trx <0-255> timeslot <0-7> sub-slot <0-7> mdcx A.B.C.D <0-65535>",
 	BTS_NR_TRX_TS_SS_STR2
@@ -5264,6 +5294,8 @@ int bsc_vty_init(struct gsm_network *network)
 	install_element(ENABLE_NODE, &pdch_act_cmd);
 	install_element(ENABLE_NODE, &lchan_act_cmd);
 	install_element(ENABLE_NODE, &lchan_mdcx_cmd);
+	install_element(ENABLE_NODE, &ts_disable_cmd);
+
 	install_element(ENABLE_NODE, &handover_subscr_conn_cmd);
 	install_element(ENABLE_NODE, &assignment_subscr_conn_cmd);
 	install_element(ENABLE_NODE, &smscb_cmd_cmd);

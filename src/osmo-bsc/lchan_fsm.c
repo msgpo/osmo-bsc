@@ -400,6 +400,7 @@ static void lchan_reset(struct gsm_lchan *lchan)
 		.meas_rep_last_seen_nr = 255,
 
 		.last_error = lchan->last_error,
+		.disabled = lchan->disabled,
 	};
 }
 

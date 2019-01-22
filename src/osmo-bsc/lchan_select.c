@@ -80,16 +80,17 @@ _lc_find_trx(struct gsm_bts_trx *trx, enum gsm_phys_chan_config pchan,
 
 		/* TS is (going to be) in desired pchan mode. Go ahead and check for an available lchan. */
 		ts_as_pchan_for_each_lchan(lchan, ts, as_pchan) {
-			if (lchan->fi->state == LCHAN_ST_UNUSED) {
+			if (lchan->fi->state == LCHAN_ST_UNUSED && lchan->disabled == false) {
 				LOGPLCHANALLOC("%s ss=%d is available%s\n",
 					       gsm_ts_and_pchan_name(ts), lchan->nr,
 					       ts->pchan_is != as_pchan ? " after dyn PCHAN change" : "");
 				return lchan;
 			}
-			LOGPLCHANALLOC("%s ss=%d in type=%s,state=%s not suitable\n",
+			LOGPLCHANALLOC("%s ss=%d in type=%s,state=%s %s\n",
 				       gsm_ts_and_pchan_name(ts), lchan->nr,
 				       gsm_lchant_name(lchan->type),
-				       osmo_fsm_inst_state_name(lchan->fi));
+				       osmo_fsm_inst_state_name(lchan->fi),
+				       lchan->disabled ? "disabled" : "not suitable");
 		}
 	}
 
