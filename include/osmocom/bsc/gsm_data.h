@@ -99,6 +99,12 @@ enum subscr_sccp_state {
 	SUBSCR_SCCP_ST_CONNECTED
 };
 
+struct channel_mode_and_rate {
+	enum gsm48_chan_mode chan_mode;
+	bool full_rate;
+	uint16_t s15_s0;
+};
+
 struct assignment_request {
 	bool aoip;
 
@@ -107,9 +113,19 @@ struct assignment_request {
 	char msc_rtp_addr[INET_ADDRSTRLEN];
 	uint16_t msc_rtp_port;
 
-	enum gsm48_chan_mode chan_mode;
-	bool full_rate;
-	uint16_t s15_s0;
+	/* Prefered rate/codec setting (mandatory) */
+	struct channel_mode_and_rate ch_mode_rate_pref;
+
+	/* Alternate rate/codec setting (optional) */
+	bool ch_mode_rate_alt_present;
+	struct channel_mode_and_rate ch_mode_rate_alt;
+
+	/* Depending on the preferences that where submitted together with
+	 * the assignment and the current channel load, the BSC has to select
+	 * one of the offered codec/rates. The final selection by the BSC is
+	 * stored here and is used when sending the assignment complete or
+	 * when performing a handover procedure. */
+	struct channel_mode_and_rate ch_mode_rate;
 };
 
 struct assignment_fsm_data {
