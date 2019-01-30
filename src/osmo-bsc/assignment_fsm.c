@@ -170,7 +170,7 @@ static void send_assignment_complete(struct gsm_subscriber_connection *conn)
 		if (gscon_is_aoip(conn)) {
 			/* Extrapolate speech codec from speech mode */
 			gsm0808_speech_codec_from_chan_type(&sc, perm_spch);
-			sc.cfg = conn->assignment.req.ch_mode_rate.s15_s0;
+			sc.cfg = conn->assignment.ch_mode_rate.s15_s0;
 			sc_ptr = &sc;
 		}
 	}
@@ -364,105 +364,36 @@ static int check_requires_voice_stream(struct gsm_subscriber_connection *conn)
 	return 0;
 }
 
-static int set_ch_mode_rate(struct gsm_subscriber_connection *conn, struct channel_mode_and_rate *ch_mode_rate)
-{
-	struct assignment_request *req = &conn->assignment.req;
-
-	if (conn->lchan->tch_mode == ch_mode_rate->chan_mode) {
-		/* current lchan suffices and already is in the right mode. We're done. */
-		LOG_ASSIGNMENT(conn, LOGL_DEBUG,
-			       "Current lchan is compatible with requested chan_mode,"
-			       " sending BSSMAP Assignment Complete directly."
-			       " requested chan_mode=%s; current lchan is %s\n",
-			       gsm48_chan_mode_name(ch_mode_rate->chan_mode), gsm_lchan_name(conn->lchan));
-
-		req->ch_mode_rate = *ch_mode_rate;
-
-		send_assignment_complete(conn);
-		return 0;
-	}
-
-	return -EINVAL;
-}
-
 /* Check if the conn is already associated with an lchan. If yes, we will check
  * if that lchan is compatible with the preferred rate/codec. If the lchan
  * turns out to be incompatible we try with the alternate rate/codec. */
-static int check_for_existing_lchan(struct gsm_subscriber_connection *conn)
+static bool reuse_existing_lchan(struct gsm_subscriber_connection *conn)
 {
 	struct assignment_request *req = &conn->assignment.req;
-	int rc;
 
 	if (!conn->lchan)
-		return 0;
+		return false;
 
 	/* Check if the currently existing lchan is compatible with the
 	 * preferred rate/codec. */
-	if (lchan_type_compat_with_mode(conn->lchan->type, &req->ch_mode_rate_pref)) {
-		rc = set_ch_mode_rate(conn, &req->ch_mode_rate_pref);
-		if (rc == 0)
-			return 1;
+	if (lchan_type_compat_with_mode(conn->lchan->type, &req->ch_mode_rate_pref))
+		conn->assignment.ch_mode_rate = req->ch_mode_rate_pref;
+	else if (req->ch_mode_rate_alt_present
+		 && lchan_type_compat_with_mode(conn->lchan->type, &req->ch_mode_rate_alt))
+		conn->assignment.ch_mode_rate = req->ch_mode_rate_alt;
+	else
+		return false;
 
-		if (!req->ch_mode_rate_alt_present) {
-			/* FIXME: send Channel Mode Modify to put the current lchan in the right mode, and kick
-			 * off its RTP stream setup code path. See gsm48_lchan_modify() and
-			 * gsm48_rx_rr_modif_ack(), and see lchan_fsm.h LCHAN_EV_CHAN_MODE_MODIF_* */
-			LOG_ASSIGNMENT(conn, LOGL_ERROR,
-				       "NOT IMPLEMENTED:"
-				       " Current lchan would be compatible, we should send Channel Mode Modify\n");
-			return 0;
-		}
-	}
-
-	/* Exit early when no alternate choice for a rate/codec exists. */
-	if (!req->ch_mode_rate_alt_present)
-		return 0;
-
-	/* In cases where the prefered rate/codec does is not compatible,
-	 * try the alternate rate/codec. */
-	if (lchan_type_compat_with_mode(conn->lchan->type, &req->ch_mode_rate_alt)) {
-		rc = set_ch_mode_rate(conn, &req->ch_mode_rate_alt);
-		if (rc == 0)
-			return 1;
-
+	if (conn->lchan->tch_mode != conn->assignment.ch_mode_rate.chan_mode) {
 		/* FIXME: send Channel Mode Modify to put the current lchan in the right mode, and kick
 		 * off its RTP stream setup code path. See gsm48_lchan_modify() and
 		 * gsm48_rx_rr_modif_ack(), and see lchan_fsm.h LCHAN_EV_CHAN_MODE_MODIF_* */
-		LOG_ASSIGNMENT(conn, LOGL_ERROR,
-			       "NOT IMPLEMENTED:"
-			       " Current lchan would be compatible, we should send Channel Mode Modify\n");
+		LOG_ASSIGNMENT(conn, LOGL_DEBUG,
+			       "Current lchan would be compatible, but Channel Mode Modify is not implemented\n");
+		return false;
 	}
 
-	return 0;
-}
-
-/* Check if a new lchan finally exists, if not log the problem and inform the
- * MSC by sending an BSSMAP assignment failure */
-static int check_new_lchan(struct gsm_subscriber_connection *conn, struct osmo_fsm_inst *fi)
-{
-	struct assignment_request *req = &conn->assignment.req;
-
-	if (!conn->assignment.new_lchan && req->ch_mode_rate_alt_present) {
-		assignment_count_result(BSC_CTR_ASSIGNMENT_NO_CHANNEL);
-		assignment_fail(GSM0808_CAUSE_NO_RADIO_RESOURCE_AVAILABLE,
-				"BSSMAP Assignment Command:"
-				" No lchan available for: chan_mode_pref=%s, full_rate_pref=%i / chan_mode_alt=%s, full_rate_alt=%i\n",
-				get_value_string(gsm48_chan_mode_names, req->ch_mode_rate_pref.chan_mode),
-				req->ch_mode_rate_pref.full_rate, get_value_string(gsm48_chan_mode_names,
-										   req->ch_mode_rate_alt.chan_mode),
-				req->ch_mode_rate_alt.full_rate);
-		return -1;
-	} else if (!conn->assignment.new_lchan) {
-		assignment_count_result(BSC_CTR_ASSIGNMENT_NO_CHANNEL);
-		assignment_fail(GSM0808_CAUSE_NO_RADIO_RESOURCE_AVAILABLE,
-				"BSSMAP Assignment Command:"
-				" No lchan available for: chan_mode=%s, full_rate=%i\n",
-				get_value_string(gsm48_chan_mode_names, req->ch_mode_rate_pref.chan_mode),
-				req->ch_mode_rate_pref.full_rate);
-		return -1;
-	}
-
-	return 0;
+	return true;
 }
 
 void assignment_fsm_start(struct gsm_subscriber_connection *conn, struct gsm_bts *bts,
@@ -494,41 +425,66 @@ void assignment_fsm_start(struct gsm_subscriber_connection *conn, struct gsm_bts
 
 	/* There may be an already existing lchan, if yes, try to work with
 	 * the existing lchan */
-	if (check_for_existing_lchan(conn)) {
-		osmo_fsm_inst_term(conn->assignment.fi, OSMO_FSM_TERM_REGULAR, 0);
+	if (reuse_existing_lchan(conn)) {
+		LOG_ASSIGNMENT(conn, LOGL_DEBUG,
+			       "Current lchan is compatible with requested chan_mode,"
+			       " sending BSSMAP Assignment Complete directly."
+			       " requested chan_mode=%s; current lchan is %s\n",
+			       gsm48_chan_mode_name(conn->assignment.ch_mode_rate.chan_mode),
+			       gsm_lchan_name(conn->lchan));
+
+		send_assignment_complete(conn);
+		/* If something went wrong during send_assignment_complete(), the fi will be gone from
+		 * error handling in there. */
+		if (conn->assignment.fi) {
+			assignment_count_result(BSC_CTR_ASSIGNMENT_COMPLETED);
+			osmo_fsm_inst_term(conn->assignment.fi, OSMO_FSM_TERM_REGULAR, 0);
+		}
 		return;
 	}
 
 	/* Try to allocate a new lchan with the preferred codec/rate choice */
 	conn->assignment.new_lchan =
 	    lchan_select_by_chan_mode(bts, req->ch_mode_rate_pref.chan_mode, req->ch_mode_rate_pref.full_rate);
-	req->ch_mode_rate = req->ch_mode_rate_pref;
+	conn->assignment.ch_mode_rate = req->ch_mode_rate_pref;
 
 	/* In case the lchan allocation fails, we try with the alternat codec/
 	 * rate choice (if possible) */
 	if (!conn->assignment.new_lchan && req->ch_mode_rate_alt_present) {
 		conn->assignment.new_lchan =
 		    lchan_select_by_chan_mode(bts, req->ch_mode_rate_alt.chan_mode, req->ch_mode_rate_alt.full_rate);
-		req->ch_mode_rate = req->ch_mode_rate_alt;
+		conn->assignment.ch_mode_rate = req->ch_mode_rate_alt;
 	}
 
 	/* Check whether the lchan allocation was successful or not and tear
 	 * down the assignment in case of failure. */
-	if (check_new_lchan(conn, fi) < 0)
+	if (!conn->assignment.new_lchan) {
+		assignment_count_result(BSC_CTR_ASSIGNMENT_NO_CHANNEL);
+		assignment_fail(GSM0808_CAUSE_NO_RADIO_RESOURCE_AVAILABLE,
+				"BSSMAP Assignment Command:"
+				" No lchan available for: preferred=%s%s / alternate=%s%s\n",
+				gsm48_chan_mode_name(req->ch_mode_rate_pref.chan_mode),
+				req->ch_mode_rate_pref.full_rate ? ",FR" : ",HR",
+				req->ch_mode_rate_alt_present ?
+					gsm48_chan_mode_name(req->ch_mode_rate_alt.chan_mode) : "none",
+				req->ch_mode_rate_alt_present ?
+					(req->ch_mode_rate_alt.full_rate ? ",FR" : ",HR") : "");
 		return;
+	}
 
 	assignment_fsm_update_id(conn);
 	LOG_ASSIGNMENT(conn, LOGL_INFO, "Starting Assignment: chan_mode=%s, full_rate=%d,"
 		       " aoip=%s MSC-rtp=%s:%u\n",
-		       gsm48_chan_mode_name(req->ch_mode_rate.chan_mode), req->ch_mode_rate.full_rate,
+		       gsm48_chan_mode_name(conn->assignment.ch_mode_rate.chan_mode),
+		       conn->assignment.ch_mode_rate.full_rate,
 		       req->aoip ? "yes" : "no", req->msc_rtp_addr, req->msc_rtp_port);
 
 	assignment_fsm_state_chg(ASSIGNMENT_ST_WAIT_LCHAN_ACTIVE);
 	info = (struct lchan_activate_info){
 		.activ_for = FOR_ASSIGNMENT,
 		.for_conn = conn,
-		.chan_mode = req->ch_mode_rate.chan_mode,
-		.s15_s0 = req->ch_mode_rate.s15_s0,
+		.chan_mode = conn->assignment.ch_mode_rate.chan_mode,
+		.s15_s0 = conn->assignment.ch_mode_rate.s15_s0,
 		.requires_voice_stream = conn->assignment.requires_voice_stream,
 		.msc_assigned_cic = req->msc_assigned_cic,
 		.re_use_mgw_endpoint_from_lchan = conn->lchan,
