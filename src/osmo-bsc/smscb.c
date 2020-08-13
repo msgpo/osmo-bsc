@@ -478,6 +478,9 @@ static void etws_primary_to_bts(struct gsm_bts *bts, const struct osmo_cbsp_writ
 	unsigned int count = 0;
 	int i, j;
 
+	LOG_BTS(bts, DCBS, LOGL_NOTICE, "ETWS Primary Notification: serno 0x%x msg_id 0x%x type 0x%x\n",
+		wrepl->new_serial_nr, wrepl->msg_id, wrepl->u.emergency.warning_type);
+
 	gen_etws_primary_notification(etws_primary, wrepl->new_serial_nr, wrepl->msg_id,
 				      wrepl->u.emergency.warning_type,
 				      wrepl->u.emergency.warning_sec_info);
